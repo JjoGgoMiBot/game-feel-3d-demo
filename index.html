@@ -426,8 +426,9 @@ function stepAttack(dt) {
     const s = clamp((atk.t - m.wind) / m.swing, 0, 1), e = 1 - Math.pow(1 - s, 3);
     swingA = lerp(m.a0, m.a1, e) * D; thrustX = m.type === 'thrust' ? lerp(-30, m.reach * 100 - 120, e) : 0;
     if (atk.t > m.wind && atk.t < m.wind + m.swing + 0.04) {
-      if (!swingTrail) { const L = WL[weapSel.value] || 1; swingTrail = fx.trail(presetOf(elemSel.value), { plane: swingPlane, r0: (GRIP + L * 0.55) * UNIT, r1: (GRIP + L) * UNIT }); }   // 궤적 띠 = 실제 칼날이 지나간 자리
-      swingTrail.sweep(swingPrev, swingA, thrustPrev, 0, thrustX, 0, 1, 1, dt);
+      const pf = m.fx || 1;   // 몸에 붙는 짧은 무기의 한 바퀴 궤적은 몸을 덮으므로 세기·남는 시간을 줄인다(moves.js fx)
+      if (!swingTrail) { const L = WL[weapSel.value] || 1, pr = presetOf(elemSel.value); swingTrail = fx.trail(pr, { plane: swingPlane, r0: (GRIP + L * 0.55) * UNIT, r1: (GRIP + L) * UNIT, life: pr.trail.life * pf }); }   // 궤적 띠 = 실제 칼날이 지나간 자리
+      swingTrail.sweep(swingPrev, swingA, thrustPrev, 0, thrustX, 0, pf, pf, dt);
     }
     if (m.sweep) { if (atk.t > m.wind) sweepHits(m, swingPrev, swingA); }
     else { const n = m.multi || 1; while (atk.fired < n && s >= (n === 1 ? m.hitAt : (atk.fired + 1) / (n + 1))) { atk.fired++; strike(m); } }   // 여러 번 찌르기는 판정 구간을 나눠 친다
@@ -504,7 +505,7 @@ function land() {
 }
 function lvUp(lv) {   // 모으기 단계가 오르는 순간: 손에 빛이 튀고 몸이 떨린다(몬스터 헌터의 단계 신호)
   const h = P.J ? P.J.haR : [P.x, 1.2, P.z];
-  hitFx.push({ x: h[0], z: h[2], y: h[1], age: 0, size: 8 + lv * 6, el: elemSel.value });
+  hitFx.push({ x: h[0], z: h[2], y: h[1], age: 0, size: 2, k: 0.45 + 0.15 * lv, el: elemSel.value });   // 손 크기(반지름 0.07~0.09m)의 짧은 불꽃: 몸을 가리지 않는다
   P.shake = 0.12; lastMove = `모으기 ${lv + 1}단`;
 }
 function stepPlayer(dt) {
@@ -647,11 +648,15 @@ function weaponPose(J) {
   else {
     const fa = N(Rig.sub(J.haR, J.elR));
     hand = J.haR;
-    if (P.act && P.act.k === 'roll') dir = N(A(Rig.sub(J.pel, J.chest), Mu(fa, 0.3)));   // 구를 때는 날을 척추 따라 몸에 붙인다(날이 바깥으로 뻗으면 땅에 걸린다)
+    if (P.act && P.act.k === 'roll') {   // 구를 때는 날을 척추 따라 몸에 붙인다(날이 바깥으로 뻗으면 땅에 걸린다)
+      dir = N(A(Rig.sub(J.pel, J.chest), Mu(fa, 0.3)));
+      const slide = { spear: 0.6, staff: 0.5 }[w];   // 긴 자루는 가운데를 쥐도록 손을 미끄러뜨린다 → 양 끝이 덜 삐져나온다. 시작·끝 0.08초에 걸쳐 옮긴다
+      if (slide) { const t = P.act.t, k = clamp(Math.min(t, RL.dur - t) / 0.08, 0, 1); hand = A(hand, Mu(dir, -slide * k)); }
+    }
     else if (SET[w]) dir = P.charging ? N(A(Mu(J.f, -1), [0, w === 'axe' ? 0.9 : -0.35, 0])) : N(A(A(fa, Mu(J.f, 0.9)), [0, 0.25, 0]));   // 모을 때는 칼을 뒤로 뺀다(발도·대검 자세)
     else dir = N(A(fa, Mu(J.f, 1.5)));
   }
-  if (TWO[w]) Rig.armIK(J, 'L', A(hand, Mu(dir, -TWO[w])), pole);
+  if (TWO[w]) { const rl = P.act && P.act.k === 'roll'; Rig.armIK(J, 'L', A(rl ? J.haR : hand, Mu(dir, -TWO[w] * (rl ? 0.6 : 1))), pole); }   // 구를 때는 두 손을 붙여 쥔다
   return { w, hand, dir, L, tip: A(hand, Mu(dir, L)) };
 }
 function drawWeapon(g, Wp, proj) {
@@ -716,7 +721,7 @@ function drawActors(g) {
       if (SHOWCOM) drawCom(g, P.J);
       if (P.charging) {   // 모으는 동안 손에 기가 모인다. 단계마다 커진다
         const h = proj(P.J.haR), lv = lvOf(P.charge);
-        if (h) BoltFx.charge(g, { x: h[0], y: h[1], ang: -Math.PI / 2, R: h[2] * (0.14 + 0.08 * lv), k: clamp(P.charge / CG.lv[1], 0, 1), el: elemSel.value });
+        if (h) BoltFx.charge(g, { x: h[0], y: h[1], ang: -Math.PI / 2, R: h[2] * (0.05 + 0.02 * lv), k: clamp(P.charge / CG.lv[1], 0, 1), el: elemSel.value });
       }
     } else {
       const e = o.e; if (!e.J) return;

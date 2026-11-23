@@ -33,7 +33,7 @@ const Moves = (() => {
     },
     dagger: {
       charge: { n: '그림자 돌진', type: 'thrust', reach: 2.4, arc: 30, a0: 0, a1: 0, wind: 0.14, swing: 0.08, end: 0.4, dash: 4.2, multi: 3, pow: [0.4, 0.7], len: 120, w: 3 },
-      rise: { n: '회전 올려베기', roll: -20, pitch: 20, a0: 70, a1: -290, reach: 2.2, arc: 90, wind: 0.02, swing: 0.16, end: 0.34, launch: 6.5, len: 120, w: 3, h: 0.9 },
+      rise: { n: '회전 올려베기', roll: -20, pitch: 20, a0: 70, a1: -290, reach: 2.2, arc: 90, wind: 0.02, swing: 0.16, end: 0.34, launch: 6.5, len: 120, w: 3, h: 0.9, fx: 0.35 },
       plunge: { n: '낙하 찌르기', roll: 0, a0: -150, a1: 50, shock: 1.3, pow: [0.6, 0.9], len: 120, w: 3 },
       parry: { n: '흘려 받기', win: 0.24, rec: 0.24, stun: 1.0 },
       low: { n: '다리 긋기', roll: 80, a0: -80, a1: 80, sweep: true, h: 0.3, reach: 2.1, wind: 0.03, swing: 0.07, end: 0.22, trip: true, len: 120, w: 3 },

@@ -125,7 +125,8 @@ const Rig = (() => {
       if (!sup) { s.p = fr.slice(); s.step = 0; continue; }   // 든 발·달리기는 자세 그대로(걷기 위상이 이미 간 거리로 돈다)
       const gap = len(flat(sub(fr, s.p)));
       s.idle = gap > 0.06 && !s.step ? (s.idle || 0) + dt : 0;   // 어긋난 채 서 있던 시간
-      S[sd] = { fr, s, gap, need: gap > 0.2 || s.idle > 0.4 };   // 다리가 펴져 발이 끌리기 전에, 또는 멈춘 뒤 0.4초 지나 발을 모은다
+      const dl = len(sub(J['hip' + sd], [s.p[0], fr[1], s.p[2]])), far = dl > TH + SH - 0.03 && dl > len(sub(J['hip' + sd], fr)) + 0.015;   // 다리를 다 펴도 고정점에 못 닿음 → 발이 들리기 전에 옮긴다
+      S[sd] = { fr, s, gap, need: gap > 0.2 || far || s.idle > 0.4 };   // 많이 벗어났거나, 닿지 않거나, 멈춘 뒤 0.4초 지나면 발을 모은다
     }
     /* 한 번에 한 발만 옮긴다(다른 발은 바닥을 지탱). 더 뒤처진 발부터. 0.22초 동안 천천히-빠르게-천천히, 발은 반원으로 든다 */
     const busy = Object.values(S).some((o) => o.s.step);
