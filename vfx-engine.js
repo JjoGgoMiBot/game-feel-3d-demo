@@ -597,7 +597,7 @@
       for (let i = 0; i < 20; i++) bits.push(Math.random());
       this.hits.push({ x, y, p: preset, c, im, rays, age: 0, life: im.life || 0.42, pl, shape: shp ? shp.id : 0, bits });
       // 집중선: 화면 밖에서 타격점으로 모이는 가는 선 (만화·애니 효과선)
-      if (im.lines !== false) {
+      if (im.lines !== false && o.lines !== false) {   // o.lines=false: 일반 타격엔 집중선 생략(큰 타격에만 아껴 써야 강조가 산다)
         const L = [];
         for (let i = 0; i < 22; i++) L.push({ a: Math.random() * TAU, w: lerp(1.5, 6, Math.random()), r: lerp(0.9, 1.3, Math.random()) });
         this.lines.push({ x, y, age: 0, life: 0.22, L, col: c.star || c.flash || [255, 255, 255], pl });
@@ -605,10 +605,11 @@
       this.kick({ x, y, dir, trauma: (im.shake || 6) / 14, freeze: im.hitstop == null ? 0.06 : im.hitstop,   // 60fps 기준 4프레임(격투·액션 히트스톱 2~4프레임)
       zoom: 0.045, frame: im.frames !== false });
       if (this.onImpact) this.onImpact(x, y, preset, dir);
+      const ks = o.scale || 1;   // 작게 친 타격은 파편도 적고 가깝게 튄다(퍼지는 거리 = 속도 × 수명)
       this.onPlane(pl, () => c.burst.forEach((d) => {
-        const cnt = d.count || 20;
+        const cnt = Math.max(1, Math.round((d.count || 20) * ks));
         for (let i = 0; i < cnt; i++) {
-          const a = dir + (Math.random() - 0.5) * d.spread, sp = rnd(d.speed);
+          const a = dir + (Math.random() - 0.5) * d.spread, sp = rnd(d.speed) * ks;
           this.spawn(d, x, y, Math.cos(a) * sp, Math.sin(a) * sp);
         }
       }));

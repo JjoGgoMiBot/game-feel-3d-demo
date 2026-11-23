@@ -182,8 +182,9 @@ function connect(ev, who, target, o) {
   logEl.innerHTML = logLines.map((s) => '<li>' + s + '</li>').join('');
   if (ev === 'tele' || o.spark) return r;   // 예고는 소리·바닥 원만. 튕겨내기는 맞닿은 점의 작은 불꽃만(세키로: 신호는 소리·멈춤, 화면을 덮지 않는다)
   const pre = presetOf(o.element);
-  fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.0, target.z]) });
-  if (ev === 'kill' || o.crit) fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.4, target.z]) });
+  const sc = 0.3 + 0.35 * clamp(o.power || 0.5, 0, 1);   // 섬광 크기 = 위력. 몸(실루엣)보다 크면 다음 동작을 못 읽는다
+  fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.0, target.z]), scale: sc, lines: ev === 'kill' || !!o.crit });   // 집중선은 처치·치명에만
+  if (ev === 'kill' || o.crit) fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.4, target.z]), scale: sc * 0.6 });
   return r;
 }
 /* ---------- 동작표: 무기마다 동작 묶음. 휘두르는 면 = roll(0 세로·±45 사선·90 수평) × pitch(면을 위로 드는 각) → 구 전체로 기울어진다 ---------- */
@@ -385,7 +386,7 @@ function plungeLand() {   // 내려치기 착지: 충격파로 둘레를 치고 
   const m = atk.m, el = elemSel.value;
   if (m.rune) bursts.push({ x: P.x, z: P.z, t: 0, el, r: m.shock }); else shocks.push({ x: P.x, z: P.z, t: 0, r: m.shock, el });
   const n = areaHit(P.x, P.z, m.shock, Object.assign({}, m, { pop: 4.5 }));
-  if (!n) connect('hit', '착지', { x: P.x, z: P.z }, { weapon: weapSel.value, element: el, power: 0.55, crit: false, kill: false });
+  if (!n) connect('hit', '착지', { x: P.x, z: P.z }, { weapon: weapSel.value, element: el, power: 0.55, crit: false, kill: false, spark: true });   // 헛치면 땅 충격파만, 명중 섬광은 없다
   if (SET[weapSel.value]) {   // 칼이 땅에 닿는 마지막 호를 0.07초에 긋는다
     const s = Object.assign({}, m, { type: 'slash', wind: 0, swing: 0.07, end: 0.3, hitAt: 9 });
     atk = { t: 0, fired: 1, m: s, hit: new Set(), dash: 0 }; swingBasis = basisFor(s); swingPlane = planeFor(s); swingA = swingPrev = s.a0 * D; swingTrail = null;
@@ -393,8 +394,8 @@ function plungeLand() {   // 내려치기 착지: 충격파로 둘레를 치고 
 }
 function boom(p) {   // 내려쏘기 착탄
   if (p.rune) bursts.push({ x: p.x, z: p.z, t: 0, el: p.el, r: p.r }); else shocks.push({ x: p.x, z: p.z, t: 0, r: p.r, el: p.el });
-  hitFx.push({ x: p.x, z: p.z, y: 0.3, age: 0, size: 16, el: p.el });
-  if (!areaHit(p.x, p.z, p.r, Object.assign({}, p.m, { pop: 3.5 }))) connect('hit', '착탄', { x: p.x, z: p.z }, { weapon: weapSel.value, element: p.el, power: 0.45, crit: false, kill: false });
+  hitFx.push({ x: p.x, z: p.z, y: 0.15, age: 0, size: 10, k: 0.8, el: p.el });   // 땅에 닿는 섬광은 낮고 작게: 충격파 고리가 주인공
+  if (!areaHit(p.x, p.z, p.r, Object.assign({}, p.m, { pop: 3.5 }))) connect('hit', '착탄', { x: p.x, z: p.z }, { weapon: weapSel.value, element: p.el, power: 0.45, crit: false, kill: false, spark: true });
 }
 function stepAttack(dt) {
   comboT += dt; if (cool > 0) cool = Math.max(0, cool - dt);
@@ -425,7 +426,7 @@ function stepAttack(dt) {
     const s = clamp((atk.t - m.wind) / m.swing, 0, 1), e = 1 - Math.pow(1 - s, 3);
     swingA = lerp(m.a0, m.a1, e) * D; thrustX = m.type === 'thrust' ? lerp(-30, m.reach * 100 - 120, e) : 0;
     if (atk.t > m.wind && atk.t < m.wind + m.swing + 0.04) {
-      if (!swingTrail) { const L = WL[weapSel.value] || 1; swingTrail = fx.trail(presetOf(elemSel.value), { plane: swingPlane, r0: (GRIP + L * 0.25) * UNIT, r1: (GRIP + L) * UNIT }); }   // 궤적 띠 = 실제 칼날이 지나간 자리
+      if (!swingTrail) { const L = WL[weapSel.value] || 1; swingTrail = fx.trail(presetOf(elemSel.value), { plane: swingPlane, r0: (GRIP + L * 0.55) * UNIT, r1: (GRIP + L) * UNIT }); }   // 궤적 띠 = 실제 칼날이 지나간 자리
       swingTrail.sweep(swingPrev, swingA, thrustPrev, 0, thrustX, 0, 1, 1, dt);
     }
     if (m.sweep) { if (atk.t > m.wind) sweepHits(m, swingPrev, swingA); }
@@ -633,7 +634,8 @@ function weaponPose(J) {
   else {
     const fa = N(Rig.sub(J.haR, J.elR));
     hand = J.haR;
-    if (SET[w]) dir = P.charging ? N(A(Mu(J.f, -1), [0, w === 'axe' ? 0.9 : -0.35, 0])) : N(A(A(fa, Mu(J.f, 0.9)), [0, 0.25, 0]));   // 모을 때는 칼을 뒤로 뺀다(발도·대검 자세)
+    if (P.act && P.act.k === 'roll') dir = N(A(Rig.sub(J.pel, J.chest), Mu(fa, 0.3)));   // 구를 때는 날을 척추 따라 몸에 붙인다(날이 바깥으로 뻗으면 땅에 걸린다)
+    else if (SET[w]) dir = P.charging ? N(A(Mu(J.f, -1), [0, w === 'axe' ? 0.9 : -0.35, 0])) : N(A(A(fa, Mu(J.f, 0.9)), [0, 0.25, 0]));   // 모을 때는 칼을 뒤로 뺀다(발도·대검 자세)
     else dir = N(A(fa, Mu(J.f, 1.5)));
   }
   if (TWO[w]) Rig.armIK(J, 'L', A(hand, Mu(dir, -TWO[w])), pole);
