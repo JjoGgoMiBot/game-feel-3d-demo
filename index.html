@@ -202,9 +202,9 @@ const SET = {
     M('회전 휘두르기', { roll: 80, a0: -200, a1: 160, sweep: true, wind: 0.12, swing: 0.24, end: 0.62, pow: [0.6, 0.95], reach: 2.7, w: 7, h: 1.0 }),
   ],
   dagger: [
-    M('빠른 사선', { roll: 50, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3 }),
-    M('빠른 반대 사선', { roll: -50, a0: -120, a1: 50, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3 }),
-    M('역수 올려베기', { roll: -20, pitch: 15, a0: 70, a1: -100, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3, h: 0.9 }),
+    M('빠른 사선', { roll: 50, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3, fx: 0.4 }),
+    M('빠른 반대 사선', { roll: -50, a0: -120, a1: 50, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3, fx: 0.4 }),
+    M('역수 올려베기', { roll: -20, pitch: 15, a0: 70, a1: -100, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3, fx: 0.4, h: 0.9 }),
     M('찌르기', { type: 'thrust', reach: 2.4, arc: 25, a0: 0, a1: 0, wind: 0.03, swing: 0.06, end: 0.16, pow: [0.25, 0.5], len: 120, w: 3 }),
   ],
   spear: [
@@ -424,7 +424,7 @@ function stepAttack(dt) {
     }
     swingPrev = swingA; thrustPrev = thrustX;
     const s = clamp((atk.t - m.wind) / m.swing, 0, 1), e = 1 - Math.pow(1 - s, 3);
-    swingA = lerp(m.a0, m.a1, e) * D; thrustX = m.type === 'thrust' ? lerp(-30, m.reach * 100 - 120, e) : 0;
+    swingA = lerp(m.a0, m.a1, e) * D; thrustX = m.type === 'thrust' ? lerp(-30, Math.min(m.reach * 100 - 120, 40), e) : 0;   // 손은 팔이 닿는 곳(몸 앞 약 0.8m)까지만 나간다. 그 너머 판정 거리는 찌르기 빛이 잇는다
     if (atk.t > m.wind && atk.t < m.wind + m.swing + 0.04) {
       const pf = m.fx || 1;   // 몸에 붙는 짧은 무기의 한 바퀴 궤적은 몸을 덮으므로 세기·남는 시간을 줄인다(moves.js fx)
       if (!swingTrail) { const L = WL[weapSel.value] || 1, pr = presetOf(elemSel.value); swingTrail = fx.trail(pr, { plane: swingPlane, r0: (GRIP + L * 0.55) * UNIT, r1: (GRIP + L) * UNIT, life: pr.trail.life * pf }); }   // 궤적 띠 = 실제 칼날이 지나간 자리
@@ -643,7 +643,7 @@ function weaponPose(J) {
     const b = swingBasis, o = [P.x, (atk.m.h || 1.2) + P.y, P.z];
     dir = N(A(Mu(b.R, Math.cos(swingA)), Mu(b.D, Math.sin(swingA))));
     hand = A(A(o, Mu(b.R, thrustX / UNIT)), Mu(dir, GRIP));
-    Rig.armIK(J, 'R', hand, pole);
+    if (Rig.armIK(J, 'R', hand, pole) > 0.005) hand = J.haR;   // 팔이 못 닿으면 무기는 실제 손에 붙는다(허공에 뜨지 않게)
   } else if (atk && atk.m.type === 'plunge') { hand = J.haR; dir = N(A(Mu(J.u, -1), Mu(J.f, 0.35))); }   // 칼끝을 아래로 세우고 떨어진다
   else {
     const fa = N(Rig.sub(J.haR, J.elR));
@@ -819,7 +819,7 @@ function drawStab(g) {
 function drawShots(g) {
   if (atk && atk.m.type === 'shot' && !atk.fired && P.J) {   // 예비동작: 발사 전 손끝에 기가 모인다
     const t0 = P.wpn ? P.wpn.tip : P.J.haR, hs = S(t0[0], t0[1], t0[2]), nx = hs && S(t0[0] + Math.cos(P.face) * 0.5, t0[1], t0[2] + Math.sin(P.face) * 0.5);   // 무기 끝에 모인다
-    if (hs && nx) BoltFx.charge(g, { x: hs[0], y: hs[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(hs) * (0.16 + atk.m.size * 0.016), k: atk.t / windOf(atk.m), el: elemSel.value });
+    if (hs && nx) BoltFx.charge(g, { x: hs[0], y: hs[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(hs) * (0.16 + atk.m.size * 0.016) * 0.55, k: atk.t / windOf(atk.m), el: elemSel.value });
   }
   shots.forEach((s) => {
     const hy = 1.1 + (s.y || 0), hs = S(s.x, hy, s.z), nx = S(s.x + s.dx * 0.5, hy, s.z + s.dz * 0.5); if (!hs || !nx) return;
