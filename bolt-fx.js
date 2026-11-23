@@ -26,17 +26,25 @@ const BoltFx = (() => {
 
   /* 투사체: 원점(0,0)=머리, +x 진행 방향. o = {x,y,ang,R(머리 반지름 px),d(날아간 거리 m),t(나이 초),el,w(무기)}
      층: ① 렌즈플레어(무지개 고리·가로 빛줄기) ② 반투명 리본 나선(2색, 3겹 선) ③ 반짝이 구름 ④ 면 있는 결정 코어 */
-  function crystal(g, R, spin, p) {
-    g.save(); g.scale(0.72 + 0.28 * Math.cos(spin), 1);
-    const N = 16, pts = [];
-    for (let i = 0; i < N; i++) { const a = i * TAU / N, main = i % 4 === 0, mid = i % 2 === 0 && !main; const r = main ? R : mid ? R * 0.62 : R * 0.36; pts.push([Math.cos(a) * r, Math.sin(a) * r]); }
-    for (let i = 0; i < N; i++) {   // 삼각 면: 번갈아 밝고 어둡게
-      const a = pts[i], b = pts[(i + 1) % N], gr = g.createLinearGradient(a[0], a[1], b[0], b[1]);
-      const lit = (i + Math.floor(spin * 1.3)) % 2 === 0;
-      gr.addColorStop(0, lit ? p.hi(0.95) : p.mid(0.85)); gr.addColorStop(1, lit ? p.mid(0.9) : p.edge(0.9));
-      g.fillStyle = gr; g.beginPath(); g.moveTo(0, 0); g.lineTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.closePath(); g.fill();
+  function crystal(g, R, spin, p) {   // 8갈래 보석: 갈래마다 좌우 두 면, 고정된 빛 방향(왼쪽 위)으로 명암을 계산 → 돌면 면이 번쩍인다
+    g.save(); g.scale(0.78 + 0.22 * Math.cos(spin), 1);
+    const N = 8, LIGHT = -2.2, rot = spin * 0.25;
+    const tip = (i) => { const a = i * TAU / N + rot, r = i % 2 ? R * 0.62 : R; return [Math.cos(a) * r, Math.sin(a) * r, a]; };
+    const val = (a) => [Math.cos(a) * R * 0.27, Math.sin(a) * R * 0.27];
+    const face = (ax, ay, bx, by, na, lift) => {
+      const lit = 0.5 + 0.5 * Math.cos(na - LIGHT), L = clamp(18 + 62 * lit + lift, 10, 92);
+      const gr = g.createLinearGradient(0, 0, (ax + bx) / 2, (ay + by) / 2);
+      gr.addColorStop(0, hsl(p.h, p.s, clamp(L + 14, 0, 96), 1)); gr.addColorStop(1, hsl(p.h - 10, p.s, clamp(L - 14, 6, 90), 1));
+      g.fillStyle = gr; g.beginPath(); g.moveTo(0, 0); g.lineTo(ax, ay); g.lineTo(bx, by); g.closePath(); g.fill();
+    };
+    for (let i = 0; i < N; i++) {
+      const t0 = tip(i), a = t0[2], vl = val(a - Math.PI / N), vr = val(a + Math.PI / N), lift = i % 2 ? -8 : 0;
+      face(t0[0], t0[1], vl[0], vl[1], a - 0.35, lift); face(t0[0], t0[1], vr[0], vr[1], a + 0.35, lift);
     }
-    g.strokeStyle = p.hi(0.8); g.lineWidth = Math.max(0.7, R * 0.05); g.beginPath(); pts.forEach((q, i) => (i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]))); g.closePath(); g.stroke();
+    g.strokeStyle = hsl(p.h, p.s * 0.4, 96, 0.75); g.lineWidth = Math.max(0.7, R * 0.04); g.lineJoin = 'round';
+    g.beginPath(); for (let i = 0; i < N; i++) { const t0 = tip(i), v = val(t0[2] + Math.PI / N); g.lineTo(t0[0], t0[1]); g.lineTo(v[0], v[1]); } g.closePath(); g.stroke();
+    g.strokeStyle = hsl(p.h, p.s * 0.3, 98, 0.55); g.lineWidth = Math.max(0.6, R * 0.03);
+    for (let i = 0; i < N; i++) { const t0 = tip(i); g.beginPath(); g.moveTo(0, 0); g.lineTo(t0[0], t0[1]); g.stroke(); }
     g.restore();
   }
   function bolt(g, o) {
@@ -72,9 +80,9 @@ const BoltFx = (() => {
       mote(g, x, y, r, [p.hi, comp, p.acc][i % 3]((1 - u * 0.75) * tw));
     }
     star(g, 0, 0, R * 3.4, R * 0.26, t * 0.6, 8, p.w(0.6));
-    glow(g, 0, 0, R * 1.6, p.w(0.4), p.mid(0));
+    glow(g, 0, 0, R * 1.6, p.w(0.22), p.mid(0));
     g.globalCompositeOperation = 'source-over'; crystal(g, R * 2.5, t * 3.5 + d, p); g.globalCompositeOperation = 'lighter';
-    glow(g, 0, 0, R * 0.7, p.w(0.8), p.hi(0));
+    glow(g, 0, 0, R * 0.32, p.w(0.55), p.hi(0));
     g.restore();
   }
 
@@ -119,34 +127,58 @@ const BoltFx = (() => {
     if (t > 0.4) impact(g, { x: o.x1, y: o.y1, R: R * 0.9, age: (t - 0.4) * 0.7, el: o.el });
   }
 
-  /* 바닥 룬 원(마법서): m = [a,b,c,d,e,f] 월드(미터,바닥 평면)→화면 아핀. r 반지름(m), ppm 화면 1m 길이, t 나이 초(0~0.9) */
+  /* 바닥 룬 원(마법서): m = [a,b,c,d,e,f] 월드(미터,바닥 평면)→화면 아핀. r 반지름(m), ppm 화면 1m 길이, t 나이 초(0~0.9)
+     층: 원판 번짐 · 이중 고리(발광) · 룬 글자 띠 · 눈금 · 꽃무늬 · 육각성+꼭짓점 구슬 · 핵 · 충격파 · 꼭짓점에서 솟는 빛줄기 · 오르는 룬 입자 */
+  const GLYPH = [[[0, -1, 0, 1], [0, -0.1, 0.7, -0.8]], [[-0.5, -1, -0.5, 1], [-0.5, -1, 0.6, -0.1], [0.6, -0.1, -0.5, 0.5]], [[0, -1, 0, 1], [-0.6, -0.6, 0, -0.05], [0.6, -0.6, 0, -0.05]],
+    [[-0.6, -1, 0.6, 1], [0.6, -1, -0.6, 1]], [[0, -1, -0.6, 0], [0, -1, 0.6, 0], [-0.6, 0, 0, 1], [0.6, 0, 0, 1]], [[-0.5, -1, -0.5, 1], [0.5, -1, 0.5, 1], [-0.5, 0, 0.5, 0]],
+    [[0, -1, 0, 1], [0, -1, 0.6, -0.4], [0, 0, 0.6, 0.6]], [[-0.55, -1, 0.55, -1], [0, -1, 0, 1], [-0.55, 1, 0.55, 1]]];
   function rune(g, o) {
     const p = pal(o.el), r = o.r, t = o.t, on = ease(t / 0.16), off = 1 - clamp((t - 0.55) / 0.35, 0, 1), A = on * off, m = o.m;
     if (A <= 0) return;
-    g.save(); g.globalCompositeOperation = 'lighter'; g.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-    const lw = (w) => w * r * 0.02;
-    glow(g, 0, 0, r * 1.15, p.mid(0.38 * A), p.mid(0));
-    g.strokeStyle = p.mid(0.95 * A); g.lineWidth = lw(1.4); g.beginPath(); g.arc(0, 0, r * 0.97 * on, 0, TAU); g.stroke();   // 바깥 테두리
-    g.strokeStyle = p.hi(0.8 * A); g.lineWidth = lw(0.7); g.beginPath(); g.arc(0, 0, r * 0.7, 0, TAU); g.stroke();
-    g.strokeStyle = p.acc(0.7 * A); g.lineWidth = lw(0.7); g.beginPath(); g.arc(0, 0, r * 0.45, 0, TAU); g.stroke();
-    g.save(); g.rotate(t * 0.9);   // 글자 띠: 짧은 획 40개가 바깥 고리 안쪽을 돈다
-    for (let i = 0; i < 40; i++) { const a = i / 40 * TAU, r0 = r * 0.8, ln = r * (0.04 + 0.05 * rn(i, 1)), tw = rn(i, 2) * 1.2 - 0.6;
-      g.strokeStyle = p.hi(0.8 * A); g.lineWidth = lw(0.8); g.beginPath(); g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); g.lineTo(Math.cos(a + tw * 0.06) * (r0 + ln), Math.sin(a + tw * 0.06) * (r0 + ln)); g.stroke(); }
+    const ppm = o.ppm, lw = (w) => w * r * 0.02, rot = t * 0.55;
+    g.save(); g.globalCompositeOperation = 'lighter'; g.transform(m[0], m[1], m[2], m[3], m[4], m[5]); g.lineCap = 'round'; g.lineJoin = 'round';
+    const disc = g.createRadialGradient(0, 0, r * 0.1, 0, 0, r * 1.05); disc.addColorStop(0, p.mid(0.1 * A)); disc.addColorStop(0.7, p.edge(0.26 * A)); disc.addColorStop(0.97, p.mid(0.34 * A)); disc.addColorStop(1, p.mid(0));
+    g.fillStyle = disc; g.beginPath(); g.arc(0, 0, r * 1.05, 0, TAU); g.fill();
+    const ring = (rad, w, col, a, blur) => { g.shadowColor = col(1); g.shadowBlur = blur; g.strokeStyle = col(a); g.lineWidth = lw(w); g.beginPath(); g.arc(0, 0, rad, 0, TAU); g.stroke(); g.shadowBlur = 0; };
+    const sweep = clamp(t / 0.2, 0, 1) * TAU;   // 바깥 고리는 한 바퀴 그려지며 나타난다
+    g.shadowColor = p.mid(1); g.shadowBlur = ppm * r * 0.05; g.strokeStyle = p.mid(0.95 * A); g.lineWidth = lw(2.4); g.beginPath(); g.arc(0, 0, r * 0.97, -Math.PI / 2, -Math.PI / 2 + sweep); g.stroke(); g.shadowBlur = 0;
+    ring(r * 0.93, 0.7, p.hi, 0.9 * A, 0); ring(r * 0.66, 0.9, p.acc, 0.8 * A, ppm * r * 0.03); ring(r * 0.62, 0.5, p.hi, 0.6 * A, 0);
+    g.save(); g.rotate(-rot * 0.6);   // 눈금: 72개, 6번째마다 길게
+    for (let i = 0; i < 72; i++) { const a = i / 72 * TAU, long = i % 6 === 0, r0 = r * 0.9, r1 = r * (long ? 0.855 : 0.875); g.strokeStyle = p.hi((long ? 0.9 : 0.55) * A); g.lineWidth = lw(long ? 0.9 : 0.5);
+      g.beginPath(); g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); g.lineTo(Math.cos(a) * r1, Math.sin(a) * r1); g.stroke(); }
     g.restore();
-    g.save(); g.rotate(-t * 0.7); g.strokeStyle = p.mid(0.85 * A); g.lineWidth = lw(1);   // 육각성: 삼각형 둘이 역회전
-    for (let s = 0; s < 2; s++) { g.beginPath(); for (let i = 0; i < 3; i++) { const a = i * TAU / 3 + s * Math.PI / 3 - Math.PI / 2; g.lineTo(Math.cos(a) * r * 0.68, Math.sin(a) * r * 0.68); } g.closePath(); g.stroke(); }
+    g.save(); g.rotate(rot);   // 룬 글자 띠: 28자, 차례로 켜진다
+    const NG = 28; g.shadowColor = p.hi(1); g.shadowBlur = ppm * r * 0.02;
+    for (let i = 0; i < NG; i++) {
+      const lit = clamp((t - 0.04 - i * 0.006) / 0.08, 0, 1); if (lit <= 0) continue;
+      const a = i / NG * TAU, gl = GLYPH[Math.floor(rn(i, 3) * GLYPH.length)], s = r * 0.052;
+      g.save(); g.translate(Math.cos(a) * r * 0.775, Math.sin(a) * r * 0.775); g.rotate(a + Math.PI / 2); g.scale(s, s * 1.25);
+      g.strokeStyle = (i % 4 === 0 ? p.w : p.hi)(0.95 * A * lit); g.lineWidth = 0.2; g.beginPath(); gl.forEach((q) => { g.moveTo(q[0], q[1]); g.lineTo(q[2], q[3]); }); g.stroke(); g.restore();
+    }
+    g.shadowBlur = 0; g.restore();
+    g.save(); g.rotate(-rot * 1.3); g.strokeStyle = p.acc(0.5 * A); g.lineWidth = lw(0.6);   // 꽃무늬: 겹친 원 6개
+    for (let i = 0; i < 6; i++) { const a = i * TAU / 6; g.beginPath(); g.arc(Math.cos(a) * r * 0.2, Math.sin(a) * r * 0.2, r * 0.2, 0, TAU); g.stroke(); }
     g.restore();
-    const sw = ease(t / 0.45);   // 충격파 링
-    if (sw < 1) { g.strokeStyle = p.w((1 - sw) * 0.9); g.lineWidth = lw(3.2 * (1 - sw) + 0.6); g.beginPath(); g.arc(0, 0, r * (0.2 + 0.85 * sw), 0, TAU); g.stroke(); }
+    g.save(); g.rotate(rot * 0.8); g.shadowColor = p.mid(1); g.shadowBlur = ppm * r * 0.03; g.strokeStyle = p.mid(0.95 * A); g.lineWidth = lw(1.1);   // 육각성 + 꼭짓점 구슬 + 안쪽 육각형
+    const vx = [];
+    for (let s = 0; s < 2; s++) { g.beginPath(); for (let i = 0; i < 3; i++) { const a = i * TAU / 3 + s * Math.PI / 3 - Math.PI / 2, x = Math.cos(a) * r * 0.6, y = Math.sin(a) * r * 0.6; g.lineTo(x, y); vx.push([x, y]); } g.closePath(); g.stroke(); }
+    g.shadowBlur = 0; g.strokeStyle = p.hi(0.7 * A); g.lineWidth = lw(0.5); g.beginPath(); for (let i = 0; i < 6; i++) { const a = i * TAU / 6; g.lineTo(Math.cos(a) * r * 0.34, Math.sin(a) * r * 0.34); } g.closePath(); g.stroke();
+    vx.forEach((q) => { glow(g, q[0], q[1], r * 0.11, p.w(0.9 * A), p.mid(0)); g.strokeStyle = p.hi(0.9 * A); g.lineWidth = lw(0.7); g.beginPath(); g.arc(q[0], q[1], r * 0.05, 0, TAU); g.stroke(); });
     g.restore();
-    const ppm = o.ppm;   // 치솟는 고리·빛기둥·불똥(화면 위쪽)
+    glow(g, 0, 0, r * 0.28, p.w(0.85 * A), p.mid(0));
+    const sw = ease(t / 0.45);   // 충격파 링 2겹
+    if (sw < 1) { [[0.2, 0.85, 1], [0.1, 0.6, 0.55]].forEach(([a0, a1, am]) => { g.strokeStyle = p.w((1 - sw) * 0.85 * am); g.lineWidth = lw(3 * (1 - sw) + 0.6); g.beginPath(); g.arc(0, 0, r * (a0 + a1 * sw), 0, TAU); g.stroke(); }); }
+    g.restore();
+    const H = ppm * 2.4;   // 화면 위쪽: 꼭짓점에서 솟는 빛줄기 · 오르는 고리 · 룬 입자
     g.save(); g.globalCompositeOperation = 'lighter';
-    const H = ppm * 2.6, gr = g.createLinearGradient(0, m[5], 0, m[5] - H); gr.addColorStop(0, p.hi(0.45 * A)); gr.addColorStop(0.5, p.mid(0.2 * A)); gr.addColorStop(1, p.mid(0));
-    g.fillStyle = gr; g.beginPath(); g.moveTo(m[4] - r * ppm * 0.28, m[5]); g.lineTo(m[4] - r * ppm * 0.1, m[5] - H); g.lineTo(m[4] + r * ppm * 0.1, m[5] - H); g.lineTo(m[4] + r * ppm * 0.28, m[5]); g.closePath(); g.fill();
-    for (let j = 0; j < 4; j++) { const u = fr(t * 1.5 + j * 0.25), rr = r * 0.62 * (1 - u * 0.45);
-      g.save(); g.transform(m[0], m[1], m[2], m[3], m[4], m[5] - u * H * 0.9); g.strokeStyle = p.acc(A * (1 - u) * 0.9); g.lineWidth = lw(1.6); g.beginPath(); g.arc(0, 0, rr, 0, TAU); g.stroke(); g.restore(); }
-    for (let i = 0; i < 44; i++) { const u = fr(t * (0.8 + rn(i, 1)) + rn(i, 2)), a = rn(i, 3) * TAU, rr = r * 0.85 * Math.sqrt(rn(i, 4)) * (1 - u * 0.5);
-      mote(g, m[4] + (Math.cos(a) * m[0] + Math.sin(a) * m[2]) * rr, m[5] + (Math.cos(a) * m[1] + Math.sin(a) * m[3]) * rr - u * H, ppm * 0.035 * (0.5 + rn(i, 5)), (i % 2 ? p.hi : p.acc)(A * (1 - u))); }
+    const base = (ang, rr) => ({ x: m[4] + (Math.cos(ang) * m[0] + Math.sin(ang) * m[2]) * rr, y: m[5] + (Math.cos(ang) * m[1] + Math.sin(ang) * m[3]) * rr });
+    for (let i = 0; i < 6; i++) { const b = base(rot * 0.8 + i * TAU / 6 - Math.PI / 2, r * 0.6), h = H * (0.55 + 0.35 * rn(i, 1)), gr = g.createLinearGradient(0, b.y, 0, b.y - h);
+      gr.addColorStop(0, p.hi(0.75 * A)); gr.addColorStop(1, p.mid(0)); g.fillStyle = gr; g.beginPath(); g.moveTo(b.x - ppm * 0.012, b.y); g.lineTo(b.x, b.y - h); g.lineTo(b.x + ppm * 0.012, b.y); g.closePath(); g.fill(); }
+    g.save(); g.translate(m[4], m[5]); g.scale(1, 0.55); const gx = g.createRadialGradient(0, 0, 0, 0, 0, r * ppm * 0.3); gx.addColorStop(0, p.hi(0.5 * A)); gx.addColorStop(1, p.mid(0)); g.fillStyle = gx; g.beginPath(); g.arc(0, 0, r * ppm * 0.3, 0, TAU); g.fill(); g.restore();
+    for (let j = 0; j < 4; j++) { const u = fr(t * 1.5 + j * 0.25), rr = r * 0.6 * (1 - u * 0.4);
+      g.save(); g.transform(m[0], m[1], m[2], m[3], m[4], m[5] - u * H * 0.9); g.strokeStyle = p.acc(A * (1 - u) * 0.85); g.lineWidth = lw(1.2); g.beginPath(); g.arc(0, 0, rr, 0, TAU); g.stroke(); g.restore(); }
+    for (let i = 0; i < 40; i++) { const u = fr(t * (0.7 + rn(i, 1)) + rn(i, 2)), a = rn(i, 3) * TAU, rr = r * 0.85 * Math.sqrt(rn(i, 4)) * (1 - u * 0.5), b = base(a, rr);
+      mote(g, b.x, b.y - u * H, ppm * 0.04 * (0.5 + rn(i, 5)), (i % 2 ? p.hi : p.acc)(A * (1 - u))); }
     g.restore();
   }
   return { bolt, impact, stab, rune };
