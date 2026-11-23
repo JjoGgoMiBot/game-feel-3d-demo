@@ -24,44 +24,57 @@ const BoltFx = (() => {
   function star(g, x, y, len, w, rot, n, col) { g.save(); g.translate(x, y); g.rotate(rot); for (let i = 0; i < n; i++) { g.save(); g.rotate(i * TAU / n); spike(g, len * (i % 2 ? 0.55 : 1), w * (i % 2 ? 0.7 : 1), col); g.restore(); } g.restore(); }
   function mote(g, x, y, r, col) { if (r > 1.6) star(g, x, y, r * 3.2, r * 0.45, 0.3, 4, col); else { g.fillStyle = col; g.beginPath(); g.arc(x, y, Math.max(r, 0.6), 0, TAU); g.fill(); } }
 
-  /* 투사체: 원점(0,0)=머리, +x 진행 방향. o = {x,y,ang,R(머리 반지름 px),d(날아간 거리 m),t(나이 초),el,w(무기)} */
-  function bolt(g, o) {
-    const p = pal(o.el), st = STYLE[o.w] || STYLE.staff, R = Math.max(o.R, 3), L = R * st.tail, d = o.d || 0, t = o.t || 0;
-    g.save(); g.globalCompositeOperation = 'lighter'; g.translate(o.x, o.y); g.rotate(o.ang);
-    glow(g, 0, 0, R * 3.4, p.mid(0.42), p.mid(0)); glow(g, -R * 1.2, 0, R * 2.4, p.edge(0.3), p.edge(0));   // 바깥 글로우(머리 뒤쪽으로 번짐)
-    const lg = g.createLinearGradient(R, 0, -L, 0);   // 몸통: 흰 핵 → 중간색 → 어두운 가장자리 → 사라짐
-    lg.addColorStop(0, p.hi(0.95)); lg.addColorStop(0.22, p.mid(0.8)); lg.addColorStop(0.65, p.edge(0.32)); lg.addColorStop(1, p.edge(0));
-    const bw = st.thin ? 0.45 : 1;
-    g.fillStyle = lg; g.beginPath(); g.moveTo(R * 1.1, 0);
-    g.quadraticCurveTo(R * 0.4, -R * 1.15 * bw, -L * 0.3, -R * 0.75 * bw); g.quadraticCurveTo(-L * 0.7, -R * 0.25 * bw, -L, 0);
-    g.quadraticCurveTo(-L * 0.7, R * 0.25 * bw, -L * 0.3, R * 0.75 * bw); g.quadraticCurveTo(R * 0.4, R * 1.15 * bw, R * 1.1, 0); g.fill();
-    const cols = [p.mid, p.acc, p.hi];   // 나선 꼬리: 굵기가 줄고 폭이 벌어지며, 앞뒤 면에 따라 굵기가 변한다
-    g.lineCap = 'round';
-    for (let k = 0; k < st.n; k++) {
-      const ph = d * 6 + k * TAU / st.n; let px = 0, py = 0;
-      for (let i = 0; i <= 36; i++) {
-        const u = i / 36, ang = ph - u * 8, x = -u * L * 0.96, y = Math.sin(ang) * R * (0.3 + 1.7 * u) * st.amp;
-        if (i) { const depth = 0.55 + 0.45 * Math.cos(ang), a = Math.pow(1 - u, 1.1) * (0.5 + 0.5 * depth);
-          g.strokeStyle = cols[k % 3](a); g.lineWidth = Math.max(0.5, R * 0.34 * (1 - u * 0.9) * depth); g.beginPath(); g.moveTo(px, py); g.lineTo(x, y); g.stroke(); }
-        px = x; py = y;
-      }
+  /* 투사체: 원점(0,0)=머리, +x 진행 방향. o = {x,y,ang,R(머리 반지름 px),d(날아간 거리 m),t(나이 초),el,w(무기)}
+     층: ① 렌즈플레어(무지개 고리·가로 빛줄기) ② 반투명 리본 나선(2색, 3겹 선) ③ 반짝이 구름 ④ 면 있는 결정 코어 */
+  function crystal(g, R, spin, p) {
+    g.save(); g.scale(0.72 + 0.28 * Math.cos(spin), 1);
+    const N = 16, pts = [];
+    for (let i = 0; i < N; i++) { const a = i * TAU / N, main = i % 4 === 0, mid = i % 2 === 0 && !main; const r = main ? R : mid ? R * 0.62 : R * 0.36; pts.push([Math.cos(a) * r, Math.sin(a) * r]); }
+    for (let i = 0; i < N; i++) {   // 삼각 면: 번갈아 밝고 어둡게
+      const a = pts[i], b = pts[(i + 1) % N], gr = g.createLinearGradient(a[0], a[1], b[0], b[1]);
+      const lit = (i + Math.floor(spin * 1.3)) % 2 === 0;
+      gr.addColorStop(0, lit ? p.hi(0.95) : p.mid(0.85)); gr.addColorStop(1, lit ? p.mid(0.9) : p.edge(0.9));
+      g.fillStyle = gr; g.beginPath(); g.moveTo(0, 0); g.lineTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.closePath(); g.fill();
     }
-    if (st.rings) {   // 꼬리를 따라 늘어선 룬 고리(옆에서 본 타원) — 글자 대신 끊긴 눈금이 돈다
-      for (let j = 0; j < 4; j++) {
-        const x = -R * (2 + j * 1.5), ry = R * (1.1 + j * 0.42), a = 0.62 * (1 - j / 4.4);
-        g.strokeStyle = p.acc(a); g.lineWidth = Math.max(0.8, R * 0.13); g.setLineDash([R * 0.34, R * 0.2]); g.lineDashOffset = -(d * 38 + j * 9);
-        g.beginPath(); g.ellipse(x, 0, R * 0.3, ry, 0, 0, TAU); g.stroke();
-        g.strokeStyle = p.hi(a * 0.7); g.lineWidth = Math.max(0.5, R * 0.06); g.setLineDash([]); g.beginPath(); g.ellipse(x, 0, R * 0.3, ry * 0.86, 0, 0, TAU); g.stroke();
-      }
+    g.strokeStyle = p.hi(0.8); g.lineWidth = Math.max(0.7, R * 0.05); g.beginPath(); pts.forEach((q, i) => (i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]))); g.closePath(); g.stroke();
+    g.restore();
+  }
+  function bolt(g, o) {
+    const p = pal(o.el), st = STYLE[o.w] || STYLE.staff, R = Math.max(o.R, 3), L = R * st.tail * 1.45, d = o.d || 0, t = o.t || 0;
+    const comp = (a) => hsl(p.h + 150, p.s, 62, a);
+    g.save(); g.globalCompositeOperation = 'lighter'; g.translate(o.x, o.y); g.rotate(o.ang);
+    glow(g, 0, 0, R * 4.2, p.mid(0.4), p.mid(0)); glow(g, -R * 2.5, 0, R * 3.6, p.edge(0.28), p.edge(0));
+    for (let j = 0; j < 14; j++) { const a0 = j / 14 * TAU, a1 = (j + 1.2) / 14 * TAU;   // 렌즈플레어: 무지개 고리
+      g.strokeStyle = hsl(p.h - 70 + j * 18, 90, 64, 0.07); g.lineWidth = R * 0.9; g.beginPath(); g.arc(0, 0, R * 3.1, a0, a1); g.stroke(); }
+    spike(g, R * 9, R * 0.16, p.hi(0.55)); g.save(); g.rotate(Math.PI); spike(g, R * 9, R * 0.16, p.hi(0.55)); g.restore();
+    const cols = [p.mid, comp, p.acc];   // 리본: 굵기 3겹(넓은 번짐·본체·밝은 심지), 앞뒤 면에 따라 굵기가 변한다
+    g.lineCap = 'round';
+    const strands = Math.max(2, st.n + 1);
+    for (let k = 0; k < strands; k++) {
+      const ph = d * 5 + k * TAU / strands, pts = [];
+      for (let i = 0; i <= 48; i++) { const u = i / 48, ang = ph - u * 7.5; pts.push([-u * L, Math.sin(ang) * R * st.amp * 1.45 * (0.35 + 1.5 * Math.pow(u, 0.7)), Math.cos(ang), u]); }
+      [[2.4, 0.16, cols[k % 3]], [1, 0.55, cols[k % 3]], [0.3, 0.95, p.hi]].forEach(([wm, am, c]) => {
+        for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], u = b[3], dep = 0.4 + 0.6 * (0.5 + 0.5 * b[2]);
+          g.strokeStyle = c(am * Math.pow(1 - u, 1.15) * (0.45 + 0.55 * dep)); g.lineWidth = Math.max(0.6, R * 0.62 * wm * Math.pow(1 - u, 0.8) * dep);
+          g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); }
+      });
+    }
+    if (st.rings) {
+      for (let j = 0; j < 3; j++) { const x = -R * (2.6 + j * 1.9), ry = R * (1.6 + j * 0.5), a = 0.6 * (1 - j / 3.4);
+        g.strokeStyle = p.acc(a); g.lineWidth = Math.max(0.8, R * 0.12); g.setLineDash([R * 0.34, R * 0.2]); g.lineDashOffset = -(d * 38 + j * 9);
+        g.beginPath(); g.ellipse(x, 0, R * 0.32, ry, 0, 0, TAU); g.stroke(); }
       g.setLineDash([]);
     }
-    for (let i = 0; i < st.spark; i++) {   // 불똥: 큰 것 몇 개 + 잔 입자 다수
-      const u = Math.pow(rn(i, 1), 0.8), x = -u * L * 1.08 + R * 0.6, y = (rn(i, 2) - 0.5) * 2 * R * (0.5 + 2.6 * u);
-      const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * 22 + i * 3.1)), r = R * (0.05 + 0.2 * Math.pow(rn(i, 4), 3));
-      mote(g, x, y, r, (i % 3 ? p.hi : p.acc)((1 - u * 0.7) * tw));
+    const ns = st.spark * 4;   // 반짝이 구름: 몸 뒤쪽으로 넓게 퍼진다
+    for (let i = 0; i < ns; i++) {
+      const u = Math.pow(rn(i, 1), 0.75), x = -u * L * 1.15 + R * 0.8, y = (rn(i, 2) - 0.5) * 2 * R * (0.9 + 3.6 * u);
+      const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * 20 + i * 3.1)), r = R * (0.04 + 0.2 * Math.pow(rn(i, 4), 3));
+      mote(g, x, y, r, [p.hi, comp, p.acc][i % 3]((1 - u * 0.75) * tw));
     }
-    star(g, 0, 0, R * 3.0, R * 0.34, t * 0.9, 8, p.w(0.95));   // 핵: 별 모양 빛살 + 흰 중심
-    glow(g, 0, 0, R * 1.15, p.w(1), p.mid(0)); g.fillStyle = p.w(1); g.beginPath(); g.arc(0, 0, R * 0.42, 0, TAU); g.fill();
+    star(g, 0, 0, R * 3.4, R * 0.26, t * 0.6, 8, p.w(0.6));
+    glow(g, 0, 0, R * 1.6, p.w(0.4), p.mid(0));
+    g.globalCompositeOperation = 'source-over'; crystal(g, R * 2.5, t * 3.5 + d, p); g.globalCompositeOperation = 'lighter';
+    glow(g, 0, 0, R * 0.7, p.w(0.8), p.hi(0));
     g.restore();
   }
 
