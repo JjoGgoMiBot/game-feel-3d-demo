@@ -182,7 +182,7 @@ function connect(ev, who, target, o) {
   logEl.innerHTML = logLines.map((s) => '<li>' + s + '</li>').join('');
   if (ev === 'tele' || o.spark) return r;   // 예고는 소리·바닥 원만. 튕겨내기는 맞닿은 점의 작은 불꽃만(세키로: 신호는 소리·멈춤, 화면을 덮지 않는다)
   const pre = presetOf(o.element);
-  const sc = 0.3 + 0.35 * clamp(o.power || 0.5, 0, 1);   // 섬광 크기 = 위력. 몸(실루엣)보다 크면 다음 동작을 못 읽는다
+  const sc = 0.3 + 0.35 * clamp(o.power || 0.5, 0, 1) * (o.fxk || 1);   // 섬광 크기 = 위력. 몸(실루엣)보다 크면 다음 동작을 못 읽는다
   fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.0, target.z]), scale: sc, lines: ev === 'kill' || !!o.crit });   // 집중선은 처치·치명에만
   if (ev === 'kill' || o.crit) fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.4, target.z]), scale: sc * 0.6 });
   return r;
@@ -491,7 +491,8 @@ function stepEnemies(dt) {
 }
 function hurtPlayer(e) {
   P.hp -= 1; P.inv = 0.8; P.hurt = 0.25; P.charging = false; P.hold = -1; if (P.act && P.act.k !== 'roll') P.act = null;
-  connect('hit', '적', P, { weapon: 'axe', element: e.el, power: 0.6, crit: false, kill: false });
+  const d = Math.hypot(e.x - P.x, e.z - P.z) || 1;   // 맞은 쪽 몸 표면에 작게: 내 몸이 섬광에 가리면 피격 자세·다음 회피를 못 읽는다
+  connect('hit', '적', { x: P.x + (e.x - P.x) / d * 0.25, z: P.z + (e.z - P.z) / d * 0.25 }, { weapon: 'axe', element: e.el, power: 0.6, crit: false, kill: false, fxk: 0.45 });   // 멈춤·흔들림은 그대로, 그림만 작게
   if (P.hp <= 0) { dead = true; document.getElementById('over').classList.add('on'); }
   hud();
 }
