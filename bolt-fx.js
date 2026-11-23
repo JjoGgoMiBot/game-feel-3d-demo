@@ -47,10 +47,45 @@ const BoltFx = (() => {
     for (let i = 0; i < N; i++) { const t0 = tip(i); g.beginPath(); g.moveTo(0, 0); g.lineTo(t0[0], t0[1]); g.stroke(); }
     g.restore();
   }
+  /* ---------- 애니메이션 원칙(api.rules 가 켜졌을 때만 작동 · 끄면 같은 장면이 밋밋하게 나온다) ----------
+     예비동작(모으기) → 발사 반동(침 부채) → 날아갈 때 늘어남(부피 유지)+오버슈트 → 착탄 정지 → 느리게 시작해 빠르게 끝나는 소멸 → 맞은 몸의 찌그러짐 */
+  const api = { rules: true };
+  const backOut = (x) => { const c = 1.7, k = clamp(x, 0, 1) - 1; return 1 + (c + 1) * k * k * k + c * k * k; };
+  function life(age) {   // 발사 직후 크기(오버슈트)와 늘어남. 늘어남은 가로로 늘면 세로가 줄어 부피가 같다
+    if (!api.rules) return { s: 1, sx: 1, sy: 1 };
+    const s = 0.3 + 0.7 * backOut(age / 0.14), sx = 1.12 + 0.38 * Math.exp(-age * 16);
+    return { s, sx, sy: 1 / sx };
+  }
+  function squash(age) {   // 맞은 몸: 눌렸다가 스프링으로 돌아온다(-45%, 감쇠 13)
+    if (!api.rules || age > 0.6) return { sx: 1, sy: 1, flash: !api.rules && age < 0.2 };
+    const v = Math.exp(-age * 13) * Math.cos(age * 30), sy = 1 - 0.45 * v;
+    return { sx: 1 / sy, sy, flash: age < 0.08 };
+  }
+  function charge(g, o) {   // 예비동작: 바늘이 안으로 모이고 고리가 줄며 구슬이 커진다(느리게 시작 → 쌓임)
+    if (!api.rules) return;
+    const p = pal(o.el), R = Math.max(o.R, 3), k = clamp(o.k, 0, 1), e = k * k, comp = hsl(p.h + 150, p.s, 62, 1);
+    g.save(); g.globalCompositeOperation = 'lighter'; g.translate(o.x, o.y); g.rotate(o.ang);
+    glow(g, 0, 0, R * (1 + 2.6 * e), p.mid(0.55 * e), p.mid(0));
+    for (let i = 0; i < 14; i++) {
+      const a = rn(i, 1) * TAU, u = fr(k * 1.25 + rn(i, 2)), len = R * (0.9 + 1.7 * rn(i, 3)), dist = R * (6 - 5 * u) * (0.75 + 0.4 * rn(i, 4));
+      g.save(); g.rotate(a); g.translate(dist, 0); spike(g, len, R * 0.06, (i % 3 ? p.hi : p.acc)(0.9 * e * (0.3 + 0.7 * u))); g.restore();
+    }
+    g.strokeStyle = p.acc(0.85 * e); g.lineWidth = Math.max(1, R * 0.14 * (1 - k * 0.5)); g.beginPath(); g.arc(0, 0, R * (4.2 - 3.2 * ease(k)), 0, TAU); g.stroke();
+    glow(g, 0, 0, R * (0.3 + 1.2 * e), p.w(0.9 * e), p.hi(0)); star(g, 0, 0, R * (1 + 2.4 * e), R * 0.14, k * 3, 4, p.w(0.8 * e));
+    g.restore();
+  }
+  function muzzle(g, o) {   // 발사 반동: 침 6개가 부채꼴로 튀고 0.14초에 꺼진다
+    if (!api.rules || o.age >= 0.14) return;
+    const p = pal(o.el), R = Math.max(o.R, 3), k = o.age / 0.14, f = ease(k * 2.5), a = 1 - k;
+    g.save(); g.globalCompositeOperation = 'lighter'; g.translate(o.x, o.y); g.rotate(o.ang);
+    glow(g, 0, 0, R * (2.4 - k), p.w(0.9 * a), p.mid(0));
+    for (let i = 0; i < 6; i++) { g.save(); g.rotate((i - 2.5) * 0.34); g.translate(R * 0.6 * f, 0); spike(g, R * (2.2 + 3.2 * f) * (i % 2 ? 0.7 : 1), R * 0.12 * a + 0.4, (i % 2 ? p.hi : p.mid)(a)); g.restore(); }
+    g.restore();
+  }
   function bolt(g, o) {
     const p = pal(o.el), st = STYLE[o.w] || STYLE.staff, R = Math.max(o.R, 3), L = R * st.tail * 1.45, d = o.d || 0, t = o.t || 0;
-    const comp = (a) => hsl(p.h + 150, p.s, 62, a);
-    g.save(); g.globalCompositeOperation = 'lighter'; g.translate(o.x, o.y); g.rotate(o.ang);
+    const comp = (a) => hsl(p.h + 150, p.s, 62, a), lf = life(t);
+    g.save(); g.globalCompositeOperation = 'lighter'; g.translate(o.x, o.y); g.rotate(o.ang); g.scale(lf.s * lf.sx, lf.s * lf.sy);
     glow(g, 0, 0, R * 4.2, p.mid(0.4), p.mid(0)); glow(g, -R * 2.5, 0, R * 3.6, p.edge(0.28), p.edge(0));
     for (let j = 0; j < 14; j++) { const a0 = j / 14 * TAU, a1 = (j + 1.2) / 14 * TAU;   // 렌즈플레어: 무지개 고리
       g.strokeStyle = hsl(p.h - 70 + j * 18, 90, 64, 0.07); g.lineWidth = R * 0.9; g.beginPath(); g.arc(0, 0, R * 3.1, a0, a1); g.stroke(); }
@@ -88,10 +123,12 @@ const BoltFx = (() => {
 
   /* 착탄: o = {x,y,ang,R,age(초),el}. 섬광 → 충격파 링 → 빛살 → 불똥, 0.5초에 사라진다 */
   function impact(g, o) {
-    const p = pal(o.el), R = Math.max(o.R, 3), k = clamp(o.age / 0.5, 0, 1), e = ease(k), fade = Math.pow(1 - k, 1.4);
+    const on = api.rules, HOLD = on ? 0.06 : 0, ag = Math.max(0, o.age - HOLD);   // 착탄 정지: 처음 0.06초(약 4프레임)는 최대 섬광에서 멈춘다
+    const p = pal(o.el), R = Math.max(o.R, 3), k = clamp(ag / (0.5 - HOLD), 0, 1), e = on ? ease(k) : k, fade = on ? Math.pow(1 - k, 1.4) : 1 - k;
     if (k >= 1) return;
     g.save(); g.globalCompositeOperation = 'lighter'; g.translate(o.x, o.y);
-    if (o.age < 0.1) glow(g, 0, 0, R * (3.2 + 4 * o.age * 10), p.w(1 - o.age * 6), p.mid(0));   // 섬광 2~4프레임
+    if (!on) { glow(g, 0, 0, R * (1 + 4 * e), p.mid(0.5 * fade), p.mid(0)); g.restore(); return; }   // 규칙 끔: 부드러운 번짐 하나가 선형으로 줄 뿐
+    if (o.age < HOLD + 0.1) glow(g, 0, 0, R * (3.2 + 4 * ag * 10), p.w(1 - ag * 6), p.mid(0));   // 섬광 2~4프레임
     glow(g, 0, 0, R * (2 + 4 * e), p.mid(0.5 * fade), p.mid(0));
     [[1, 5.8, 0.5, p.mid], [0.7, 4.2, 0.3, p.hi]].forEach(([sp, mx, wd, c], i) => {   // 충격파 링 2겹(지면에 눕힌 타원)
       const rr = R * (0.8 + mx * ease(k * sp * 1.25)); g.strokeStyle = c(fade * (i ? 0.7 : 0.95)); g.lineWidth = Math.max(0.8, R * wd * (1 - k));
@@ -105,7 +142,7 @@ const BoltFx = (() => {
       const a = rn(i, 8) * TAU, dist = R * (1 + (3 + 6 * rn(i, 9)) * (1 - Math.pow(1 - k, 2)));
       mote(g, Math.cos(a) * dist, Math.sin(a) * dist + R * 3 * k * k, R * (0.06 + 0.16 * rn(i, 10)) * (1 - k * 0.6), (i % 3 ? p.hi : p.acc)(fade));
     }
-    if (o.age < 0.18) star(g, 0, 0, R * 4.2 * (1 - o.age * 4), R * 0.4, 0.5, 8, p.w(1 - o.age * 5));
+    if (ag < 0.18) star(g, 0, 0, R * 4.2 * (1 - ag * 4), R * 0.4, 0.5, 8, p.w(1 - ag * 5));
     g.restore();
   }
 
@@ -181,6 +218,7 @@ const BoltFx = (() => {
       mote(g, b.x, b.y - u * H, ppm * 0.04 * (0.5 + rn(i, 5)), (i % 2 ? p.hi : p.acc)(A * (1 - u))); }
     g.restore();
   }
-  return { bolt, impact, stab, rune };
+  Object.assign(api, { bolt, impact, stab, rune, charge, muzzle, life, squash });
+  return api;
 })();
 if (typeof window !== 'undefined') window.BoltFx = BoltFx;

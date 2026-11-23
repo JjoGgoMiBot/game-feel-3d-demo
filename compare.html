@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>원칙 끔·켬 비교</title>
+<style>
+:root{
+  --bg:#101114;--panel:#17181d;--line:#2a2c35;--text:#ececf0;--sub:#a9adbb;--accent:#8fb4ff;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+  --f1:12px;--f2:14px;--f3:16px;--f4:20px;
+  --t-fast:150ms;--ease:cubic-bezier(.2,0,0,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:var(--f2)/1.5 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}
+main{max-width:1000px;margin:0 auto;padding:var(--s4)}
+h1{font-size:var(--f4);margin:0 0 var(--s1)}
+p.lead{margin:0 0 var(--s4);color:var(--sub)}
+.bar{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-bottom:var(--s4)}
+select,button{min-height:44px;padding:0 var(--s3);background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;font:inherit}
+button{cursor:pointer;transition:background-color var(--t-fast) var(--ease)}
+button:hover{background:#20222a}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.scrub{flex:1 1 200px;display:flex;align-items:center;gap:var(--s2);min-width:0}
+.scrub input{flex:1;min-width:0;min-height:44px}
+.lane{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:6px;margin-bottom:var(--s3);overflow:hidden}
+.lane canvas{display:block;width:100%;height:auto;aspect-ratio:1000/260}
+.tag{position:absolute;left:var(--s3);top:var(--s3);font-size:var(--f1);color:var(--sub);background:rgba(16,17,20,.7);padding:var(--s1) var(--s2);border-radius:4px}
+.lane.on .tag{color:var(--text);border:1px solid var(--accent)}
+.note{color:var(--sub);font-size:var(--f1);margin:var(--s2) 0 0}
+.note b{color:var(--text);font-weight:600}
+a{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <h1>원칙 끔 · 켬 비교</h1>
+  <p class="lead">같은 장면을 위아래로 겹쳐 본다. 위는 효과 그림만 나오고, 아래는 애니메이션 원칙이 더해진다. 시간 막대를 끌면 한 장면씩 볼 수 있다.</p>
+  <div class="bar">
+    <label>무기 <select id="w" aria-label="무기"><option value="staff">지팡이</option><option value="wand">완드</option><option value="bow">활</option><option value="bullet">총</option><option value="throw">투척</option></select></label>
+    <label>속성 <select id="e" aria-label="속성"><option value="arcane">비전</option><option value="fire">불</option><option value="ice">얼음</option><option value="lightning">번개</option><option value="poison">독</option><option value="dark">암흑</option><option value="holy">신성</option><option value="wind">바람</option><option value="metal">금속</option></select></label>
+    <label>속도 <select id="sp" aria-label="재생 속도"><option value="1">1배</option><option value="0.25">0.25배</option></select></label>
+    <button id="pp" type="button">멈춤</button>
+    <div class="scrub"><input id="tm" type="range" min="0" max="1000" value="0" aria-label="시간"><span id="tl">0.00초</span></div>
+  </div>
+  <div class="lane" id="l0"><span class="tag">원칙 끔</span><canvas id="c0" aria-label="원칙을 끈 장면"></canvas></div>
+  <div class="lane on" id="l1"><span class="tag">원칙 켬</span><canvas id="c1" aria-label="원칙을 켠 장면"></canvas></div>
+  <p class="note"><b>아래에 더해지는 것</b> — ① 예비동작: 발사 전 0.3초 동안 바늘이 모이고 몸이 낮아진다 ② 발사 반동: 침 6개가 튀고 몸이 뒤로 밀린다 ③ 날아갈 때 가로로 늘어나고(부피 유지) 처음 크기를 넘었다 돌아온다 ④ 착탄에서 0.06초 멈춘 뒤 터진다 ⑤ 맞은 몸이 45% 눌렸다 스프링으로 돌아오고 화면이 흔들린다 ⑥ 느리게 시작해 빠르게 끝나는 곡선. 위에는 이 여섯이 없다.</p>
+  <p class="note"><a href="index.html">전투 아레나로 돌아가기</a> · 아레나에서 <a href="index.html?rules=0">원칙 끄고 해 보기</a></p>
+</main>
+<script src="bolt-fx.js"></script>
+<script>
+const TAU = Math.PI * 2, clamp = (v, a, b) => Math.max(a, Math.min(b, v)), fr = (x) => x - Math.floor(x);
+const rn = (i, k) => fr(Math.sin(i * 127.1 + k * 311.7) * 43758.5453);
+const $ = (id) => document.getElementById(id);
+const CH = 0.32, FLY = 0.62, T_HIT = CH + FLY, TOTAL = 2.6;   // 모으기 · 날기 · 착탄 시각 · 한 바퀴
+const BODY = { fire: '#e8603a', ice: '#4aa6d8', lightning: '#d8c030', poison: '#6cc04a', dark: '#8a5ad8', holy: '#e8c860', arcane: '#c060d0', wind: '#40d0b0', metal: '#8a9cc8' };
+const SIZE = { staff: 14, wand: 11, bow: 8, bullet: 12, throw: 16 };
+let playing = true, T = 0, last = 0, speed = 1;
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (reduce) playing = false;
+
+function setup(c) { const r = c.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 2); c.width = Math.round(r.width * d); c.height = Math.round(r.height * d); return d; }
+function body(g, x, base, h, w, col, flash, sq) {   // 캡슐 몸. sq 로 가로·세로를 바닥 기준으로 늘리고 줄인다
+  const hh = h * sq.sy, ww = w * sq.sx;
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(x, base, ww * 1.2, ww * 0.4, 0, 0, TAU); g.fill();
+  g.lineCap = 'round'; g.lineWidth = ww * 2; g.strokeStyle = flash ? '#fff' : col; g.beginPath(); g.moveTo(x, base - ww); g.lineTo(x, base - hh); g.stroke();
+}
+function lane(c, rules) {
+  const d = setup(c), g = c.getContext('2d'), W = c.width, H = c.height, k = H / 260;
+  BoltFx.rules = rules;
+  const w = $('w').value, el = $('e').value, t = T;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.fillStyle = '#17181d'; g.fillRect(0, 0, W, H);
+  const gy = H * 0.8, px = W * 0.14, ex = W * 0.84, hy = H * 0.5, R = (8 + SIZE[w] * 0.9) * k;
+  g.fillStyle = '#1f2027'; g.fillRect(0, gy, W, H - gy);
+  const sinceHit = t - T_HIT, hit = sinceHit >= 0;
+  if (rules && hit && sinceHit < 0.3) { const a = 8 * k * Math.exp(-sinceHit * 14); g.translate(rn(Math.floor(sinceHit * 60), 1) * a - a / 2, rn(Math.floor(sinceHit * 60), 2) * a - a / 2); }   // 흔들림: 지수로 줄어든다
+  // 플레이어: 예비동작에서 낮아지고(스쿼시), 발사 순간 뒤로 밀린다
+  let psq = { sx: 1, sy: 1 }, pbk = 0;
+  if (rules) {
+    if (t < CH) { const q = Math.pow(t / CH, 2); psq = { sx: 1 + 0.12 * q, sy: 1 - 0.12 * q }; }
+    else { const a = t - CH; pbk = -14 * k * Math.exp(-a * 11) * Math.cos(a * 22); const v = Math.exp(-a * 12) * Math.cos(a * 26); psq = { sx: 1 - 0.1 * v, sy: 1 + 0.1 * v }; }
+  }
+  body(g, px + pbk, gy, 110 * k, 15 * k, '#5b8def', false, psq);
+  // 적: 맞으면 눌렸다가 스프링으로 돌아오고, 뒤로 밀렸다 돌아온다
+  const sq = hit ? BoltFx.squash(sinceHit) : { sx: 1, sy: 1, flash: false };
+  const push = rules && hit ? 22 * k * (1 - Math.exp(-sinceHit * 25)) * Math.exp(-sinceHit * 5) : 0;
+  body(g, ex + push, gy, 110 * k, 18 * k, BODY[el], sq.flash, sq);
+  // 효과
+  const gx = px + 52 * k, ang = 0;
+  if (t < CH) BoltFx.charge(g, { x: gx, y: hy, ang, R, k: t / CH, el });
+  if (t >= CH && t < T_HIT) {
+    const u = (t - CH) / FLY, age = t - CH;
+    BoltFx.muzzle(g, { x: gx, y: hy, ang, R, age, el });
+    BoltFx.bolt(g, { x: gx + (ex - gx) * u, y: hy, ang, R, d: u * 9, t: age, el, w });
+  }
+  if (hit) BoltFx.impact(g, { x: ex - 10 * k, y: hy, R: R * 1.5, age: sinceHit, el });
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+function draw() { lane($('c0'), false); lane($('c1'), true); $('tl').textContent = T.toFixed(2) + '초'; $('tm').value = Math.round(T / TOTAL * 1000); }
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (playing) { T += dt * speed; if (T >= TOTAL) T = 0; draw(); }
+  requestAnimationFrame(loop);
+}
+$('pp').addEventListener('click', () => { playing = !playing; $('pp').textContent = playing ? '멈춤' : '재생'; });
+$('tm').addEventListener('input', (e) => { playing = false; $('pp').textContent = '재생'; T = e.target.value / 1000 * TOTAL; draw(); });
+$('sp').addEventListener('change', (e) => { speed = +e.target.value; });
+['w', 'e'].forEach((id) => $(id).addEventListener('change', () => { T = 0; draw(); }));
+addEventListener('resize', draw);
+const q = new URLSearchParams(location.search); if (q.has('t')) { playing = false; T = +q.get('t'); }   // 점검용: ?t=0.2 로 그 순간에 멈춘다
+if (q.has('w')) $('w').value = q.get('w'); if (q.has('e')) $('e').value = q.get('e');
+$('pp').textContent = playing ? '멈춤' : '재생';
+draw(); last = performance.now(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
