@@ -610,12 +610,25 @@ function enemyTarget(e) {
   if (e.hurt > 0 && e.st !== 'dead') p = Rig.mix(p, K.hurt, e.hurt / 0.2 * 0.7);
   return p;
 }
+/* ?com=1: 무게중심(노란 점)과 그 바닥 투영(노란 고리), 디딘 두 발을 잇는 지지선(초록). 고리가 초록 선 위·사이에 있으면 정적으로 균형 */
+const SHOWCOM = /[?&]com=1/.test(location.search);
+function drawCom(g, J) {
+  const c = proj(J.com), gnd = proj([J.com[0], Math.min(J.ftL[1], J.ftR[1]), J.com[2]]), a = proj(J.ftL), b = proj(J.ftR);
+  if (!c || !gnd || !a || !b) return;
+  g.save(); g.lineWidth = 3; g.strokeStyle = '#3ddc84'; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  g.strokeStyle = '#ffd040'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(c[0], c[1]); g.lineTo(gnd[0], gnd[1]); g.stroke(); g.setLineDash([]);
+  g.fillStyle = '#ffd040'; g.beginPath(); g.arc(c[0], c[1], 5, 0, Math.PI * 2); g.fill();
+  g.lineWidth = 2.5; g.beginPath(); g.arc(gnd[0], gnd[1], 7, 0, Math.PI * 2); g.stroke(); g.restore();
+}
 function poseActors(dt) {
   const t = playerTarget(), fast = atk || (P.act && P.act.k !== 'land');
   P.pose = Rig.smooth(P.pose, t, fast ? 40 : 18, dt); P.pose.flip = t.flip;   // 공격·구르기는 키 자세를 거의 그대로(빠르게), 서기·달리기는 부드럽게
-  P.J = Rig.build(P.pose, { x: P.x, z: P.z, y: P.y, face: P.face, ground: true });
+  const grounded = !P.air && !(P.act && P.act.k === 'roll');   // 공중·구르기 중엔 발 고정을 풀고 다시 잡는다
+  if (!grounded) P.lock = {};
+  P.J = Rig.build(P.pose, { x: P.x, z: P.z, y: P.y, face: P.face, ground: true, lock: grounded ? (P.lock || (P.lock = {})) : null, dt, spd: P.spd });
   P.wpn = weaponPose(P.J);
-  enemies.forEach((e) => { const g = enemyTarget(e); e.pose = Rig.smooth(e.pose, g, 14, dt); e.pose.flip = g.flip; e.J = Rig.build(e.pose, { x: e.x, z: e.z, y: e.y, face: e.face, ground: true }); });
+  enemies.forEach((e) => { const g = enemyTarget(e); e.pose = Rig.smooth(e.pose, g, 14, dt); e.pose.flip = g.flip; const gr = (e.y || 0) < 0.02 && e.st !== 'air' && e.st !== 'dead'; if (!gr) e.lock = {};
+    e.J = Rig.build(e.pose, { x: e.x, z: e.z, y: e.y, face: e.face, ground: true, lock: gr ? (e.lock || (e.lock = {})) : null, dt, spd: e.spd || 0 }); });
 }
 
 /* ---------- 무기: 휘두를 때는 칼이 궤적 면을 따라가고(손은 IK로 칼자루에 붙는다), 그 밖에는 손에 들려 있다 ---------- */
@@ -700,6 +713,7 @@ function drawActors(g) {
       if (wp && behind) drawWeapon(g, wp, proj);
       Rig.draw(g, P.J, proj, { color: '#5b8def', flash, visor: P.critT > 0 ? '#ffd040' : '#ffe6a8' });
       if (wp && !behind) drawWeapon(g, wp, proj);
+      if (SHOWCOM) drawCom(g, P.J);
       if (P.charging) {   // 모으는 동안 손에 기가 모인다. 단계마다 커진다
         const h = proj(P.J.haR), lv = lvOf(P.charge);
         if (h) BoltFx.charge(g, { x: h[0], y: h[1], ang: -Math.PI / 2, R: h[2] * (0.14 + 0.08 * lv), k: clamp(P.charge / CG.lv[1], 0, 1), el: elemSel.value });

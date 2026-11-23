@@ -17,7 +17,7 @@ const Rig = (() => {
 
   /* 자세: 각도는 라디안. a* = [어깨 앞들기(0 아래·π/2 앞·π 머리 위), 벌리기, 팔꿈치 굽힘], l* = [엉덩이 앞들기, 무릎 굽힘]
      lean 상체 앞숙임, twist 가슴 비틀기(+오른쪽 어깨가 뒤로), side 옆기울기, head 고개, flip 몸 전체 앞구르기 회전, spin 몸 전체 제자리 돌기, dx 앞으로 내민 거리 */
-  const BASE = { lean: 0.04, side: 0, twist: 0, head: 0, flip: 0, spin: 0, dx: 0, st: 0.05, aL: [0.1, 0.12, 0.3], aR: [0.1, 0.12, 0.3], lL: [0.06, 0.12], lR: [0.06, 0.12] };
+  const BASE = { lean: 0.04, side: 0, twist: 0, head: 0, flip: 0, spin: 0, dx: 0, st: 0.05, wt: 0.5, bal: 1, aL: [0.1, 0.12, 0.3], aR: [0.1, 0.12, 0.3], lL: [0.06, 0.12], lR: [0.06, 0.12] };
   const pose = (o) => { const p = JSON.parse(JSON.stringify(BASE)); for (const k in o) p[k] = Array.isArray(o[k]) ? o[k].slice() : o[k]; return p; };
   function mix(a, b, t) { const o = {}; for (const k in a) o[k] = Array.isArray(a[k]) ? a[k].map((v, i) => v + (b[k][i] - v) * t) : a[k] + (b[k] - a[k]) * t; return o; }
   const backOut = (x) => { const c = 1.7, k = x - 1; return 1 + (c + 1) * k * k * k + c * k * k; };
@@ -29,7 +29,7 @@ const Rig = (() => {
     return keys[keys.length - 1][1];
   }
   /* 부드럽게 따라가기: 부위마다 빠르기를 달리한다(몸통 1, 다리 1.2, 팔 0.75, 머리 0.55 배) → 머리·팔이 늦게 따라와 겹침 동작이 생긴다 */
-  const PART = { aL: 0.75, aR: 0.75, head: 0.55, lL: 1.2, lR: 1.2 };
+  const PART = { aL: 0.75, aR: 0.75, head: 0.55, lL: 1.2, lR: 1.2, wt: 1.3 };   // 체중(골반)이 가장 먼저 — 몸쪽에서 끝쪽으로(Putnam 1993)
   function smooth(cur, tgt, rate, dt) {
     if (!cur) return mix(tgt, tgt, 0);
     const o = {}; for (const k in tgt) { const a = 1 - Math.exp(-rate * (PART[k] || 1) * dt); o[k] = Array.isArray(tgt[k]) ? tgt[k].map((v, i) => cur[k][i] + (v - cur[k][i]) * a) : cur[k] + (tgt[k] - cur[k]) * a; }
@@ -41,7 +41,7 @@ const Rig = (() => {
     const A = 0.55 * amt, s = Math.sin(phase), c = Math.cos(phase), br = Math.sin(t * 2.4) * 0.02 * (1 - amt);
     const leg = (sn, cs) => [0.06 + A * sn, 0.12 + amt * (0.15 + 1.15 * Math.max(0, cs))];   // 다리가 앞으로 넘어올 때 무릎을 접는다
     return pose({
-      lean: 0.04 + 0.2 * amt + br, twist: 0.16 * s * amt, head: -0.1 * amt,
+      lean: 0.04 + 0.2 * amt + br, twist: 0.16 * s * amt, head: -0.1 * amt, bal: 1 - 0.8 * amt,
       lL: leg(s, c), lR: leg(-s, -c),
       aL: [0.1 - 0.6 * s * amt, 0.12, 0.3 + 1.05 * amt], aR: [0.1 + 0.6 * s * amt, 0.12, 0.3 + 1.05 * amt],
     });
@@ -64,13 +64,85 @@ const Rig = (() => {
       const eb = add(so, mul(dir(sh), UA)); return [so, eb, add(eb, mul(dir(sh + el), FA))]; };
     [J.shL, J.elL, J.haL] = arm('aL', -1); [J.shR, J.elR, J.haR] = arm('aR', 1);
     J.f = fwdT; J.s = s2; J.u = spine;
+    if (!p.flip && p.bal > 0) balance(J, p, f, u);
     if (p.flip) { const piv = add(pel, mul(spine, 0.2)); for (const k in J) if (k.length > 1 && Array.isArray(J[k]) && !['f', 's', 'u'].includes(k)) J[k] = add(piv, rot(sub(J[k], piv), s, p.flip)); J.f = rot(J.f, s, p.flip); J.u = rot(J.u, s, p.flip); }
     let lift;
     if (root.ground) { let lo = Infinity; for (const k in J) if (k.length > 1 && !['f', 's', 'u'].includes(k)) lo = Math.min(lo, J[k][1] - (k === 'head' ? HEAD : 0.03)); lift = (root.y || 0) - lo; }
     else lift = (root.y || 0) + STAND;
     const off = [root.x, lift, root.z];
     for (const k in J) if (!['f', 's', 'u'].includes(k)) J[k] = add(J[k], off);
+    if (root.lock && root.ground && !p.flip) plant(J, root, f, u);
+    J.com = com(J);
     return J;
+  }
+
+  /* ---------- 무게중심 · 체중 이동 · 발 고정 ----------
+     부위 질량 비율과 부위 무게중심 위치(몸쪽 끝에서의 비율)는 Winter, Biomechanics and Motor Control of Human Movement(Dempster 1955 자료를 정리한 표):
+     머리·목 0.081 · 몸통 0.497(가운데) · 위팔 0.028(0.436) · 아래팔 0.016(0.430) · 손 0.006 · 넓적다리 0.100(0.433) · 정강이 0.0465(0.433) · 발 0.0145. 합 1.0. 무기 무게는 넣지 않았다. */
+  const MASS = [['head', 'head', 0.081, 0], ['pel', 'neck', 0.497, 0.5],
+    ['shL', 'elL', 0.028, 0.436], ['elL', 'haL', 0.016, 0.43], ['haL', 'haL', 0.006, 0], ['shR', 'elR', 0.028, 0.436], ['elR', 'haR', 0.016, 0.43], ['haR', 'haR', 0.006, 0],
+    ['hipL', 'knL', 0.1, 0.433], ['knL', 'ftL', 0.0465, 0.433], ['ftL', 'toeL', 0.0145, 0.5], ['hipR', 'knR', 0.1, 0.433], ['knR', 'ftR', 0.0465, 0.433], ['ftR', 'toeR', 0.0145, 0.5]];
+  function com(J) { let c = [0, 0, 0]; for (const [a, b, m, r] of MASS) c = add(c, mul(add(J[a], mul(sub(J[b], J[a]), r)), m)); return c; }
+  const flat = (v) => [v[0], 0, v[2]];
+  /* 두 관절 다리 IK: 엉덩이에서 발목 target 까지, 무릎은 앞(f)으로 굽힌다. 다리가 닿지 않으면 발을 끌어온다 */
+  function legIK(J, side, target, f) {
+    const hip = J['hip' + side], to = sub(target, hip), d0 = len(to), d = clamp(d0, 0.05, TH + SH - 1e-3), dir = norm(to);
+    const ca = (TH * TH + d * d - SH * SH) / (2 * TH * d), sa = Math.sqrt(Math.max(0, 1 - ca * ca));
+    let pv = sub(f, mul(dir, dot(f, dir))); pv = len(pv) < 1e-4 ? f : norm(pv);
+    J['kn' + side] = add(hip, add(mul(dir, TH * ca), mul(pv, TH * sa)));
+    J['ft' + side] = add(hip, mul(dir, d));
+    const dy = clamp(J['ft' + side][1] - target[1], 0, 0.1);   // 발목이 못 닿으면 뒤꿈치를 들고 발끝으로 딛는다
+    J['toe' + side] = add(J['ft' + side], add(mul(norm(flat(f)), Math.sqrt(0.13 * 0.13 - dy * dy)), [0, -dy, 0]));
+  }
+  /* 체중 이동: 무게중심의 바닥 투영을 받치는 발 사이 목표점(p.wt 0=뒷발·1=앞발)으로 옮긴다. 받치는 발은 제자리에 두고 다리를 IK로 다시 맞춘다.
+     정적 균형 조건 = 무게중심 투영이 지지 다각형(디딘 발) 안 — 생체역학 기본. p.bal 0~1 이 따르는 정도(달릴 땐 낮다: 달리기는 동적 균형) */
+  function balance(J, p, f, u) {
+    const L = J.ftL, R = J.ftR, lo = Math.min(L[1], R[1]), still = p.bal > 0.85;   // 서 있는 자세(달리기 아님)
+    const band = still ? 0.14 : 0.08;   // 서 있을 땐 0.14m 안쪽 발도 땅을 딛는 발로 본다(뒷발이 뜬 채 떠 있지 않게)
+    const swL = clamp(1 - (L[1] - lo) / band, 0, 1), swR = clamp(1 - (R[1] - lo) / band, 0, 1);   // 바닥에 가까울수록 받치는 발
+    const a = clamp((dot(L, f) - dot(R, f)) / 0.12, -1, 1);   // 왼발이 앞이면 +1. 발이 엇갈릴 때도 끊기지 않게 부드럽게
+    let wL = (0.5 + (p.wt - 0.5) * a) * swL, wR = (0.5 - (p.wt - 0.5) * a) * swR; const ws = wL + wR || 1; wL /= ws; wR /= ws;
+    const tgt = add(mul(L, wL), mul(R, wR));
+    let d = mul(flat(sub(tgt, com(J))), p.bal); const dl = len(d); if (dl > 0.25) d = mul(d, 0.25 / dl);
+    const keep = {}; for (const sd of ['L', 'R']) { const ft = J['ft' + sd]; if ((sd === 'L' ? swL : swR) > 0.2) keep[sd] = still ? [ft[0], lo, ft[2]] : ft.slice(); }
+    const REACH = TH + SH - 0.02, hor = (sd, k) => len(flat(sub(add(J['hip' + sd], mul(d, k)), keep[sd])));
+    let k = 1; for (const sd in keep) if (hor(sd, k) > REACH) { let a0 = 0, a1 = 1; for (let i = 0; i < 8; i++) { const m = (a0 + a1) / 2; hor(sd, m) > REACH ? (a1 = m) : (a0 = m); } k = Math.min(k, a0); }
+    d = mul(d, k);   // 디딘 발이 닿지 않을 만큼은 옮기지 않는다
+    let drop = 0;   // 다리가 모자라면 골반을 낮춰(무릎을 굽혀) 닿게 한다 — 런지에서 몸이 내려앉는 것
+    for (const sd in keep) { const h = hor(sd, 1), v = J['hip' + sd][1] - keep[sd][1]; if (Math.hypot(h, v) > REACH) drop = Math.max(drop, v - Math.sqrt(Math.max(0, REACH * REACH - h * h))); }
+    const mv = add(d, [0, -Math.min(drop, 0.12), 0]);
+    for (const k2 in J) if (k2.length > 1 && !['f', 's', 'u'].includes(k2)) J[k2] = add(J[k2], mv);
+    for (const sd of ['L', 'R']) if (keep[sd]) legIK(J, sd, keep[sd], f);
+  }
+  /* 발 고정: 받치는 발은 땅에 박아 둔다(미끄러짐 방지). 몸이 멀어져 0.28m 넘게 벌어지면 0.1초 남짓에 걸쳐 들어 올려 새 자리로 디딘다.
+     root.lock = { L:{p,step}, R:{…} } 은 배우마다 따로 두는 상태, root.dt 는 프레임 시간, root.spd 는 이동 속도 */
+  function plant(J, root, f, u) {
+    const lk = root.lock, dt = root.dt || 0, run = (root.spd || 0) > 1.2;
+    const lo = Math.min(J.ftL[1], J.ftR[1]), S = {};
+    for (const sd of ['L', 'R']) {
+      const fr = J['ft' + sd], s = lk[sd] || (lk[sd] = { p: fr.slice(), step: 0, a: null, k: 0 });
+      const sup = fr[1] - lo < 0.04 && !run && dt > 0;
+      if (!sup) { s.p = fr.slice(); s.step = 0; continue; }   // 든 발·달리기는 자세 그대로(걷기 위상이 이미 간 거리로 돈다)
+      const gap = len(flat(sub(fr, s.p)));
+      s.idle = gap > 0.06 && !s.step ? (s.idle || 0) + dt : 0;   // 어긋난 채 서 있던 시간
+      S[sd] = { fr, s, gap, need: gap > 0.2 || s.idle > 0.4 };   // 다리가 펴져 발이 끌리기 전에, 또는 멈춘 뒤 0.4초 지나 발을 모은다
+    }
+    /* 한 번에 한 발만 옮긴다(다른 발은 바닥을 지탱). 더 뒤처진 발부터. 0.22초 동안 천천히-빠르게-천천히, 발은 반원으로 든다 */
+    const busy = Object.values(S).some((o) => o.s.step);
+    if (!busy) {
+      const c = Object.values(S).filter((o) => o.need).sort((x, y) => y.gap - x.gap)[0];
+      if (c) { c.s.step = 1; c.s.a = c.s.p.slice(); c.s.k = 0; }
+    }
+    for (const sd in S) {
+      const { fr, s } = S[sd]; let lift = 0;
+      if (s.step) {
+        s.k = Math.min(1, s.k + dt / 0.22);
+        const e = s.k * s.k * (3 - 2 * s.k);
+        s.p = add(s.a, mul(sub(fr, s.a), e)); lift = 0.08 * Math.sin(Math.PI * s.k);
+        if (s.k >= 1) s.step = 0;
+      }
+      legIK(J, sd, [s.p[0], fr[1] + lift, s.p[2]], f);
+    }
   }
   /* 두 관절 IK: 어깨에서 target 까지 팔꿈치를 pole 쪽으로 굽힌다. 닿지 않으면 쭉 편다. 반환: 손까지 남은 거리(몸을 더 내밀어야 하는 양) */
   function armIK(J, side, target, pole) {

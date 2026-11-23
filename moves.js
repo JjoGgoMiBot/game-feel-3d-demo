@@ -57,33 +57,38 @@ const Moves = (() => {
   /* ---------- 자세 ---------- */
   const R = Rig.pose, PI = Math.PI;
   const KEY = {
-    crouch: R({ lean: 0.5, lL: [1.25, 2.3], lR: [1.0, 2.1], aL: [1.1, 0.15, 1.3], aR: [0.9, 0.15, 1.2], head: 0.3, st: 0.16 }),
-    preJump: R({ lean: 0.45, lL: [0.95, 1.7], lR: [0.95, 1.7], aL: [-0.5, 0.15, 0.4], aR: [-0.5, 0.15, 0.4] }),
+    crouch: R({ wt: 0.5, lean: 0.5, lL: [1.25, 2.3], lR: [1.0, 2.1], aL: [1.1, 0.15, 1.3], aR: [0.9, 0.15, 1.2], head: 0.3, st: 0.16 }),
+    preJump: R({ wt: 0.5, lean: 0.45, lL: [0.95, 1.7], lR: [0.95, 1.7], aL: [-0.5, 0.15, 0.4], aR: [-0.5, 0.15, 0.4] }),
     rise: R({ lean: -0.05, lL: [1.25, 1.9], lR: [0.15, 0.35], aL: [2.4, 0.2, 0.4], aR: [2.2, 0.2, 0.4], head: -0.3 }),
     apex: R({ lean: 0.2, lL: [1.3, 2.1], lR: [0.8, 1.6], aL: [1.6, 0.6, 0.8], aR: [1.6, 0.6, 0.8] }),
     fall: R({ lean: 0.1, lL: [0.5, 0.7], lR: [0.2, 0.4], aL: [1.9, 1.0, 0.4], aR: [1.9, 1.0, 0.4], head: 0.2 }),
-    land: R({ lean: 0.5, lL: [1.1, 1.9], lR: [0.9, 1.7], aL: [0.7, 0.5, 0.6], aR: [0.7, 0.5, 0.6], head: 0.25 }),
-    heavyLand: R({ lean: 0.85, lL: [1.5, 2.5], lR: [0.4, 1.9], aL: [1.2, 0.5, 0.4], aR: [1.3, 0.2, 0.2], head: 0.5 }),
+    land: R({ wt: 0.5, lean: 0.5, lL: [1.1, 1.9], lR: [0.9, 1.7], aL: [0.7, 0.5, 0.6], aR: [0.7, 0.5, 0.6], head: 0.25 }),
+    heavyLand: R({ wt: 0.7, lean: 0.85, lL: [1.5, 2.5], lR: [0.4, 1.9], aL: [1.2, 0.5, 0.4], aR: [1.3, 0.2, 0.2], head: 0.5 }),
     roll: R({ lean: 1.0, lL: [2.0, 2.6], lR: [2.1, 2.6], aL: [1.5, 0.3, 2.1], aR: [1.5, 0.3, 2.1], head: 0.6 }),
-    parry: R({ lean: 0.1, twist: -0.35, lL: [0.45, 0.6], lR: [-0.15, 0.3], aL: [1.4, 0.2, 1.5], aR: [1.9, -0.1, 1.0], head: 0.1 }),
-    charge: R({ lean: 0.38, twist: 0.75, lL: [0.75, 1.1], lR: [-0.1, 0.65], aL: [0.6, 0.3, 0.6], aR: [0.4, 0.4, 0.5], st: 0.2 }),
-    aim: R({ lean: 0.08, twist: -0.25, lL: [0.3, 0.35], lR: [-0.15, 0.2], aL: [1.2, 0.1, 0.6], aR: [1.57, 0, 0.05] }),
+    parry: R({ wt: 0.35, lean: 0.1, twist: -0.35, lL: [0.45, 0.6], lR: [-0.15, 0.3], aL: [1.4, 0.2, 1.5], aR: [1.9, -0.1, 1.0], head: 0.1 }),
+    charge: R({ wt: 0.25, lean: 0.38, twist: 0.75, lL: [0.75, 1.1], lR: [-0.1, 0.65], aL: [0.6, 0.3, 0.6], aR: [0.4, 0.4, 0.5], st: 0.2 }),
+    aim: R({ wt: 0.4, lean: 0.08, twist: -0.25, lL: [0.3, 0.35], lR: [-0.15, 0.2], aL: [1.2, 0.1, 0.6], aR: [1.57, 0, 0.05] }),
     plunge: R({ lean: -0.2, lL: [1.1, 1.8], lR: [0.6, 1.2], aL: [2.9, 0.1, 0.3], aR: [2.9, 0.1, 0.3], head: -0.2 }),
-    hurt: R({ lean: -0.35, side: 0.1, head: -0.4, aL: [0.6, 0.6, 0.5], aR: [0.7, 0.6, 0.6], lL: [0.35, 0.5], lR: [-0.1, 0.2] }),
-    stun: R({ lean: 0.45, side: 0.15, head: 0.7, aL: [0.15, 0.3, 0.2], aR: [0.15, 0.3, 0.2], lL: [0.5, 1.0], lR: [0.2, 0.6] }),
-    teleUp: R({ lean: -0.3, aL: [2.9, 0.35, 0.5], aR: [2.9, 0.35, 0.5], lL: [0.5, 0.8], lR: [-0.1, 0.4], head: -0.35 }),
-    slam: R({ lean: 0.75, aL: [1.0, 0.25, 0.1], aR: [1.0, 0.25, 0.1], lL: [0.9, 1.3], lR: [-0.2, 0.3], head: 0.3 }),
+    hurt: R({ wt: 0.15, lean: -0.35, side: 0.1, head: -0.4, aL: [0.6, 0.6, 0.5], aR: [0.7, 0.6, 0.6], lL: [0.35, 0.5], lR: [-0.1, 0.2] }),
+    stun: R({ wt: 0.55, lean: 0.45, side: 0.15, head: 0.7, aL: [0.15, 0.3, 0.2], aR: [0.15, 0.3, 0.2], lL: [0.5, 1.0], lR: [0.2, 0.6] }),
+    teleUp: R({ wt: 0.25, lean: -0.3, aL: [2.9, 0.35, 0.5], aR: [2.9, 0.35, 0.5], lL: [0.5, 0.8], lR: [-0.1, 0.4], head: -0.35 }),
+    slam: R({ wt: 0.85, lean: 0.75, aL: [1.0, 0.25, 0.1], aR: [1.0, 0.25, 0.1], lL: [0.9, 1.3], lR: [-0.2, 0.3], head: 0.3 }),
     down: R({ lean: 0.1, aL: [2.6, 0.9, 0.2], aR: [2.4, 0.9, 0.3], lL: [0.3, 0.4], lR: [0.15, 0.6], head: -0.3 }),
   };
   /* 근접 공격 몸: 감기(예비) → 풀기(판정) → 돌아오기. 비틀기로 상체가 먼저 감기고(꼬임), 발이 앞으로 한 걸음 나간다 */
   /* t 는 공격 시작 후 초, m 은 동작(wind 발동·swing 판정·end 끝). 판정 시각에 몸이 가장 멀리 풀려 있게 키를 프레임 데이터에 맞춘다 */
   function swingBody(t, m, heavy) {
     const thrust = m.type === 'thrust', dir = (m.a1 || 0) >= (m.a0 || 0) ? 1 : -1;   // 휘두르는 방향으로 몸을 감았다 푼다
-    const coil = R({ lean: -0.08 - 0.1 * heavy, twist: dir * (0.55 + 0.3 * heavy), lL: [0.3, 0.45], lR: [-0.1, 0.35], head: 0.1, aL: [0.7, 0.4, 0.9] });
-    const hit = R({ lean: 0.3 + 0.25 * heavy + (thrust ? 0.15 : 0), twist: thrust ? -0.3 : -dir * (0.65 + 0.25 * heavy), lL: [0.75 + (thrust ? 0.3 : 0), 0.55], lR: [-0.5, 0.35], head: 0.15, aL: [0.3, 0.5, 0.4] });
-    const rest = R({ lean: 0.12, twist: -dir * 0.15, lL: [0.35, 0.4], lR: [-0.1, 0.25] });
+    const coil = R({ wt: 0.22, lean: -0.08 - 0.1 * heavy, twist: dir * (0.55 + 0.3 * heavy), lL: [0.3, 0.45], lR: [-0.1, 0.35], head: 0.1, aL: [0.7, 0.4, 0.9] });
+    const hit = R({ wt: thrust ? 0.9 : 0.8 + 0.1 * heavy, lean: 0.3 + 0.25 * heavy + (thrust ? 0.15 : 0), twist: thrust ? -0.3 : -dir * (0.65 + 0.25 * heavy), lL: [0.75 + (thrust ? 0.3 : 0), 0.55], lR: [-0.5, 0.35], head: 0.15, aL: [0.3, 0.5, 0.4] });
+    const rest = R({ wt: 0.6, lean: 0.12, twist: -dir * 0.15, lL: [0.35, 0.4], lR: [-0.1, 0.25] });
     const w = Math.max(0.03, m.wind || 0), s = m.swing || 0.1;
-    return Rig.track([[0, coil, 'out'], [w, coil, 'io'], [w + s, hit, 'out'], [Math.max(w + s + 0.01, m.end || 0.4), rest, 'io']], t);
+    const K = [[0, coil, 'out'], [w, coil, 'io'], [w + s, hit, 'out'], [Math.max(w + s + 0.01, m.end || 0.4), rest, 'io']];
+    /* 몸쪽→끝쪽 순서(Putnam 1993 · 투구·타격 운동사슬): 체중·다리가 먼저, 몸통이 다음, 팔·머리가 마지막에 같은 키에 닿는다.
+       앞선 시간(다리 0.05초 · 몸통 0.025초)은 논문 값이 아니라 60fps에서 3·1.5프레임으로 보이게 정한 값 */
+    const lead = Math.min(0.05, w * 0.6), legs = Rig.track(K, t + lead), core = Rig.track(K, t + lead * 0.5), o = Rig.mix(Rig.track(K, t), core, 0);
+    o.wt = legs.wt; o.lL = legs.lL; o.lR = legs.lR; o.st = legs.st; o.lean = core.lean; o.twist = core.twist; o.side = core.side;
+    return o;
   }
   return { JUMP, ROLL, CHARGE, LAND, SP, KEY, swingBody };
 })();
