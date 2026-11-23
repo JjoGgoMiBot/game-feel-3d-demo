@@ -85,6 +85,7 @@ details ol { margin: 0 0 var(--s2); padding-left: var(--s5); max-height: 96px; o
 <script src="presets.js"></script>
 <script src="vfx-gl.js"></script>
 <script src="vfx-set.js"></script>
+<script src="bolt-fx.js"></script>
 <script src="game-feel.js"></script>
 <script src="game-feel-audio.js"></script>
 <script>
@@ -257,12 +258,12 @@ function startAttack() {
 }
 function stepAttack(dt) {
   comboT += dt; if (cool > 0) cool = Math.max(0, cool - dt);
-  stepShots(dt); bursts.forEach((b) => (b.t += dt)); while (bursts.length && bursts[0].t > 0.9) bursts.shift(); hitFx.forEach((f) => (f.age += dt)); while (hitFx.length && hitFx[0].age > 0.3) hitFx.shift();
+  stepShots(dt); bursts.forEach((b) => (b.t += dt)); while (bursts.length && bursts[0].t > 0.9) bursts.shift(); hitFx.forEach((f) => (f.age += dt)); while (hitFx.length && hitFx[0].age > 0.5) hitFx.shift();
   if (!atk) { if (queued && cool <= 0) { queued = false; startAttack(); } return; }
   const m = atk.m; atk.t += dt;
-  if (m.type === 'shot') { if (!atk.fired && atk.t >= m.wind) { atk.fired = true; shots.push({ x: P.x, z: P.z, dx: Math.cos(P.face), dz: Math.sin(P.face), d: 0, m, tr: [], el: elemSel.value, key: VFXSet.weapon(weapSel.value, elemSel.value) }); } }
+  if (m.type === 'shot') { if (!atk.fired && atk.t >= m.wind) { atk.fired = true; shots.push({ x: P.x, z: P.z, dx: Math.cos(P.face), dz: Math.sin(P.face), d: 0, m, tr: [], el: elemSel.value, w: weapSel.value, age: 0 }); } }
   else if (m.type === 'burst') {
-    if (!atk.fired && atk.t >= m.wind) { atk.fired = true; bursts.push({ x: P.x, z: P.z, t: 0, el: elemSel.value, r: m.radius, key: VFXSet.weapon('grimoire', elemSel.value) });
+    if (!atk.fired && atk.t >= m.wind) { atk.fired = true; bursts.push({ x: P.x, z: P.z, t: 0, el: elemSel.value, r: m.radius });
       enemies.forEach((e) => { if (e.st !== 'dead' && Math.hypot(e.x - P.x, e.z - P.z) <= m.radius) hitEnemy(e, m); }); }
   } else {
     swingPrev = swingA; thrustPrev = thrustX;
@@ -280,10 +281,10 @@ function stepAttack(dt) {
 function stepShots(dt) {
   for (let i = shots.length - 1; i >= 0; i--) {
     const s = shots[i], m = s.m, v = m.speed * dt;
-    s.x += s.dx * v; s.z += s.dz * v; s.d += v; s.tr.push([s.x, s.z]); if (s.tr.length > 8) s.tr.shift();
+    s.age += dt; s.x += s.dx * v; s.z += s.dz * v; s.d += v; s.tr.push([s.x, s.z]); if (s.tr.length > 8) s.tr.shift();
     s.hit = s.hit || new Set();
     const hit = enemies.find((e) => e.st !== 'dead' && !s.hit.has(e) && Math.hypot(e.x - s.x, e.z - s.z) < m.r + 0.4);
-    if (hit) { hitEnemy(hit, m); s.hit.add(hit); if (s.key) { const a = S(s.x - s.dx, 1.1, s.z - s.dz), b = S(s.x, 1.1, s.z); hitFx.push({ key: s.key, x: hit.x, z: hit.z, age: 0, fxs: m.fxs, rot: a && b ? Math.atan2(b[1] - a[1], b[0] - a[0]) : 0 }); } if (!m.pierce) { shots.splice(i, 1); continue; } }
+    if (hit) { hitEnemy(hit, m); s.hit.add(hit); { hitFx.push({ x: hit.x, z: hit.z, age: 0, size: m.size, el: s.el }); } if (!m.pierce) { shots.splice(i, 1); continue; } }
     if (s.d > (m.max || 10) || Math.hypot(s.x, s.z) > ARENA + 1) shots.splice(i, 1);
   }
 }
@@ -410,57 +411,24 @@ function drawSword(g) {
   if (!a || !b) return;
   g.strokeStyle = '#dfe3ea'; g.lineCap = 'round'; g.lineWidth = m.w * dpr; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
 }
-/* ---------- 원본 vfx 셰이더 이펙트(VFXSet)를 그림 한 장으로 뽑아 겹친다. 배경은 mask:0(배경만) 장면과의 차이로 지운다 ---------- */
-let vs = null; try { vs = new VFXSet(); } catch (e) { vs = null; }   // WebGL2가 없으면 아래 도형으로 대신 그린다
-const sprC = document.createElement('canvas'), sprG = sprC.getContext('2d');
-const PPU = (h) => h / (2 * Math.tan(20 * D) * 8.5);   // 이펙트 카메라(거리 8.5·시야 40°)에서 단위 1당 픽셀
-function vsprite(key, t, w, h) {
-  if (!vs || !key) return null;
-  try {
-    if (sprC.width !== w || sprC.height !== h) { sprC.width = w; sprC.height = h; }
-    sprG.globalCompositeOperation = 'source-over'; sprG.clearRect(0, 0, w, h);
-    vs.render({ fx: key, time: t, w, h, mask: 0, loop: false, bloom: 0.55, hold: false }); vs.blit(sprG, w, h);
-    vs.render({ fx: key, time: t, w, h, loop: false, bloom: 0.55, hold: false }); sprG.globalCompositeOperation = 'difference'; vs.blit(sprG, w, h);
-    sprG.globalCompositeOperation = 'multiply';   // 가장자리를 검게 눌러 남은 바닥빛이 사각형으로 보이지 않게 한다
-    [[w, 0], [0, h]].forEach(([dx, dy]) => { const gr = sprG.createLinearGradient(0, 0, dx, dy);
-      gr.addColorStop(0, '#000'); gr.addColorStop(0.12, '#fff'); gr.addColorStop(0.88, '#fff'); gr.addColorStop(1, '#000'); sprG.fillStyle = gr; sprG.fillRect(0, 0, w, h); });
-    return sprC;
-  } catch (e) { vs = null; return null; }
+/* ---------- 층 구성 이펙트(bolt-fx.js): 핵·몸통·나선 꼬리·룬 고리·불똥·충격파. 화면 길이는 1m당 픽셀(ppm)로 맞춘다 ---------- */
+const ppmAt = (p) => UNIT * p[2];
+function groundM(x, z) {   // 바닥(y=0)의 월드 미터 → 화면 아핀: 중심과 +x·+z 한 칸의 화면 위치
+  const c = S(x, 0, z), a = S(x + 1, 0, z), b = S(x, 0, z + 1); if (!c || !a || !b) return null;
+  return [a[0] - c[0], a[1] - c[1], b[0] - c[0], b[1] - c[1], c[0], c[1]];
 }
-function putFx(g, c, ox, oy, px, py, rot, k, a) {   // 그림의 (ox,oy) 점을 화면 (px,py)에 놓고 rot만큼 돌려 k배로
-  g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = a; g.translate(px, py); g.rotate(rot); g.scale(k, k); g.drawImage(c, -ox, -oy); g.restore();
-}
-const SW = 576, SH = 320;
 function drawStab(g) {
   if (!atk || atk.m.type !== 'thrust' || !(weapSel.value === 'spear' || weapSel.value === 'dagger')) return;
-  const m = atk.m, a = S(P.x, m.h, P.z), b = S(P.x + Math.cos(P.face) * m.reach, m.h, P.z + Math.sin(P.face) * m.reach);
-  const spr = a && b && vsprite(VFXSet.weapon(weapSel.value, elemSel.value), clamp((atk.t - m.wind) * 1.6, 0, 1.1), 400, 400); if (!spr) return;
-  const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-  putFx(g, spr, 276, 200, b[0], b[1], Math.atan2(b[1] - a[1], b[0] - a[0]), d / 276 * 0.8, 1);
+  const m = atk.m, a = S(P.x, m.h, P.z), b = S(P.x + Math.cos(P.face) * m.reach, m.h, P.z + Math.sin(P.face) * m.reach); if (!a || !b) return;
+  BoltFx.stab(g, { x0: a[0], y0: a[1], x1: b[0], y1: b[1], R: ppmAt(a) * (weapSel.value === 'spear' ? 0.2 : 0.14), t: clamp((atk.t - m.wind) / (m.end - m.wind), 0, 1), el: elemSel.value });
 }
 function drawShots(g) {
   shots.forEach((s) => {
-    const hs = S(s.x, 1.1, s.z), nx = S(s.x + s.dx * 0.5, 1.1, s.z + s.dz * 0.5);
-    if (hs && nx && s.key) {
-      const t = 0.15 + 1.9 * clamp(s.d / (s.m.max || 10), 0, 1), spr = vsprite(s.key, t, SW, SH);
-      if (spr) { const pp = PPU(SH), k = UNIT * hs[2] * (s.m.fxs || 0.5) / pp; putFx(g, spr, SW / 2 + (-5.2 + 10 * (t - 0.15) / 1.9) * pp, SH / 2, hs[0], hs[1], Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), k, 1); return; }
-    }
-    const c = hexA(COLOR[s.el] || '#ffffff', 1), pts = s.tr.map((q) => S(q[0], 1.1, q[1])).filter(Boolean), h = S(s.x, 1.1, s.z); if (!h) return;
-    const pm = UNIT * h[2] / 100;
-    g.lineCap = 'round'; g.strokeStyle = hexA(COLOR[s.el] || '#ffffff', 0.45); g.lineWidth = s.m.size * 0.6 * pm * dpr;
-    if (pts.length > 1) { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); pts.forEach((q) => g.lineTo(q[0], q[1])); g.stroke(); }
-    if (s.m.arrow) { const t = S(s.x - s.dx * 0.7, 1.1, s.z - s.dz * 0.7); g.strokeStyle = '#e8e2d0'; g.lineWidth = 3 * dpr; if (t) { g.beginPath(); g.moveTo(t[0], t[1]); g.lineTo(h[0], h[1]); g.stroke(); } }
-    else { g.fillStyle = c; g.beginPath(); g.arc(h[0], h[1], s.m.size * pm * dpr * 0.5, 0, 6.2832); g.fill(); g.fillStyle = '#ffffff'; g.beginPath(); g.arc(h[0], h[1], s.m.size * pm * dpr * 0.2, 0, 6.2832); g.fill(); }
+    const hs = S(s.x, 1.1, s.z), nx = S(s.x + s.dx * 0.5, 1.1, s.z + s.dz * 0.5); if (!hs || !nx) return;
+    BoltFx.bolt(g, { x: hs[0], y: hs[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(hs) * (0.13 + s.m.size * 0.014), d: s.d, t: s.age || 0, el: s.el, w: s.w });
   });
-  hitFx.forEach((f) => {
-    const hs = S(f.x, 1.1, f.z), spr = hs && vsprite(f.key, 2.0 + f.age * 0.8, SW, SH); if (!spr) return;
-    const pp = PPU(SH); putFx(g, spr, SW / 2 + 5.2 * pp, SH / 2, hs[0], hs[1], f.rot, UNIT * hs[2] * (f.fxs || 0.5) * 0.4 / pp, 1 - f.age / 0.3);
-  });
-  bursts.forEach((b) => {
-    const gp = S(b.x, 0, b.z), spr = gp && vsprite(b.key, 0.3 + 1.4 * b.t, 400, 400);
-    if (spr) { putFx(g, spr, 200, 304, gp[0], gp[1], 0, b.r * UNIT * gp[2] / 136 * 0.85, 0.9 * (1 - clamp((b.t - 0.6) / 0.3, 0, 1))); return; }
-    if (b.t > 0.4) return;
-    const k = clamp(b.t / 0.4, 0, 1); ring(g, b.x, b.z, b.r * (0.25 + 0.75 * (1 - Math.pow(1 - k, 3))), 48); g.strokeStyle = hexA(COLOR[b.el] || '#ffffff', 0.9 * (1 - k)); g.lineWidth = 4 * dpr; g.stroke(); g.fillStyle = hexA(COLOR[b.el] || '#ffffff', 0.18 * (1 - k)); g.fill(); });
+  hitFx.forEach((f) => { const hs = S(f.x, 1.1, f.z); if (hs) BoltFx.impact(g, { x: hs[0], y: hs[1], R: ppmAt(hs) * (0.13 + (f.size || 12) * 0.014) * 1.5, age: f.age, el: f.el }); });
+  bursts.forEach((b) => { const m = groundM(b.x, b.z), gp = S(b.x, 0, b.z); if (m && gp) BoltFx.rune(g, { m, r: b.r, ppm: ppmAt(gp), t: b.t, el: b.el }); });
 }
 function render(w) {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
