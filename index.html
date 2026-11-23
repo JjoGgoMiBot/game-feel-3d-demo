@@ -56,7 +56,7 @@ details ol { margin: 0 0 var(--s2); padding-left: var(--s5); max-height: 96px; o
   <div class="stat"><dt>처치</dt><dd id="sKill">0</dd></div>
   <div class="stat" id="sHpBox"><dt>체력</dt><dd id="sHp">5 / 5</dd></div>
   <div class="stat"><dt>최근 멈춤</dt><dd id="sStop">0 ms</dd></div>
-  <div class="stat"><dt>이펙트 키</dt><dd id="sKey">-</dd></div>
+  <div class="stat"><dt>동작</dt><dd id="sMove">-</dd></div>
 </dl>
 <canvas id="c" aria-label="3D 전투 아레나. 이동 WASD 또는 방향키, 공격 스페이스"></canvas>
 <div class="over" id="over"><p>쓰러졌다</p><button class="primary" id="again">다시 시작</button></div>
@@ -125,6 +125,7 @@ WEAPS.forEach((w) => weapSel.add(new Option(w.ko, w.k)));
 const WEATHER_KO = { clear: '맑음', rain: '비', snow: '눈', storm: '폭풍', fog: '안개' };
 Object.keys(GameFeel.CONST.weather.kinds).forEach((k) => weaSel.add(new Option(WEATHER_KO[k] || k, k)));
 elemSel.value = 'fire'; weapSel.value = 'sword';
+weapSel.addEventListener('change', () => { comboI = 0; });
 weaSel.addEventListener('change', () => GameFeel.emit('weather', { kind: weaSel.value }));
 
 /* ---------- 게임 상태 ---------- */
@@ -133,7 +134,7 @@ let enemies = [], kills = 0, atk = null, queued = false, cool = 0, dead = false,
 const keys = {};
 function resetGame() {
   Object.assign(P, { x: 0, z: 0, face: -Math.PI / 2, hp: PLAYER_HP, inv: 0, hurt: 0, ax: 0, az: 0 });
-  enemies = []; kills = 0; atk = null; queued = false; cool = 0; dead = false; spawnT = 0; fx.clear(); GameFeel.reset();
+  enemies = []; kills = 0; atk = null; queued = false; cool = 0; dead = false; spawnT = 0; comboI = 0; comboT = 9; lastMove = '-'; shots.length = 0; bursts.length = 0; fx.clear(); GameFeel.reset();
   for (let i = 0; i < 4; i++) spawn(i * Math.PI / 2 + 0.6);
   document.getElementById('over').classList.remove('on'); hud();
 }
@@ -171,52 +172,120 @@ function connect(ev, who, target, o) {
   if (ev === 'kill' || o.crit) fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.4, target.z]) });
   return r;
 }
-function playerStrike() {
-  const reach = 2.4, hits = [];
-  enemies.forEach((e) => {
-    if (e.st === 'dead') return;
-    const dx = e.x - P.x, dz = e.z - P.z, d = Math.hypot(dx, dz);
-    let da = Math.atan2(dz, dx) - P.face; da = Math.atan2(Math.sin(da), Math.cos(da));
-    if (d <= reach && Math.abs(da) <= 65 * D) hits.push(e);
-  });
-  hits.forEach((e) => {
-    const crit = Math.random() < 0.2, power = clamp(rnd(0.35, 0.75) * (crit ? 1.2 : 1), 0, 1);
-    e.hp -= power * (crit ? 1.8 : 1) * 0.6; e.hurt = 0.2;
-    const d = Math.hypot(e.x - P.x, e.z - P.z) || 1; e.kx = (e.x - P.x) / d * 3; e.kz = (e.z - P.z) / d * 3;
-    const kill = e.hp <= 0;
-    connect(kill ? 'kill' : 'hit', '플레이어', e, { weapon: weapSel.value, element: elemSel.value, power, crit, kill });
-    if (kill) { e.st = 'dead'; e.dead = 0; kills++; }
-  });
-  return hits.length;
+/* ---------- 동작표: 무기마다 동작 묶음. 휘두르는 면 = roll(0 세로·±45 사선·90 수평) × pitch(면을 위로 드는 각) → 구 전체로 기울어진다 ---------- */
+const M = (n, o) => Object.assign({ n, type: 'slash', roll: 0, pitch: 0, a0: -130, a1: 40, reach: 2.4, arc: 65, hitAt: 0.5, wind: 0.08, swing: 0.1, end: 0.34, pow: [0.35, 0.75], h: 1.2, len: 250, w: 4 }, o);
+const SET = {
+  sword: [
+    M('사선 내려베기', { roll: 45 }), M('반대 사선', { roll: -45, a0: -120, a1: 50 }),
+    M('수평 가르기', { roll: 90, a0: -100, a1: 100, sweep: true, h: 1.1, reach: 2.6 }), M('올려베기', { roll: -35, pitch: 20, a0: 75, a1: -115, h: 0.9 }),
+    M('돌려베기', { roll: 90, a0: -200, a1: 160, sweep: true, reach: 2.7, swing: 0.2, end: 0.5, h: 1.0, pow: [0.4, 0.8] }),
+    M('찌르기', { type: 'thrust', reach: 3.4, arc: 22, a0: 0, a1: 0, swing: 0.1, end: 0.36, pow: [0.5, 0.85] }),
+  ],
+  axe: [
+    M('내려찍기', { roll: 0, a0: -150, a1: 55, wind: 0.16, swing: 0.12, end: 0.52, pow: [0.6, 0.95], reach: 2.3, w: 7 }),
+    M('횡베기', { roll: 90, a0: -110, a1: 90, sweep: true, wind: 0.14, swing: 0.14, end: 0.5, pow: [0.55, 0.9], w: 7, h: 1.0 }),
+    M('회전 휘두르기', { roll: 80, a0: -200, a1: 160, sweep: true, wind: 0.12, swing: 0.24, end: 0.62, pow: [0.6, 0.95], reach: 2.7, w: 7, h: 1.0 }),
+  ],
+  dagger: [
+    M('빠른 사선', { roll: 50, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3 }),
+    M('빠른 반대 사선', { roll: -50, a0: -120, a1: 50, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3 }),
+    M('역수 올려베기', { roll: -20, pitch: 15, a0: 70, a1: -100, reach: 2.2, wind: 0.04, swing: 0.06, end: 0.18, pow: [0.2, 0.45], len: 120, w: 3, h: 0.9 }),
+    M('찌르기', { type: 'thrust', reach: 2.4, arc: 25, a0: 0, a1: 0, wind: 0.03, swing: 0.06, end: 0.16, pow: [0.25, 0.5], len: 120, w: 3 }),
+  ],
+  spear: [
+    M('찌르기', { type: 'thrust', reach: 3.8, arc: 18, a0: 0, a1: 0, wind: 0.1, swing: 0.1, end: 0.4, pow: [0.5, 0.85], len: 320, w: 4 }),
+    M('휩쓸기', { roll: 90, a0: -80, a1: 80, sweep: true, reach: 3.3, h: 0.7, swing: 0.14, end: 0.42, len: 320 }),
+    M('올려 찌르기', { type: 'thrust', pitch: 28, reach: 3.6, arc: 22, a0: 0, a1: 0, wind: 0.1, swing: 0.1, end: 0.4, pow: [0.5, 0.85], len: 320 }),
+  ],
+};
+// 원거리: 쏘는 속도·크기·위력·간격이 다르다. 마법서는 내 주위 전방위 폭발.
+const SHOT = {
+  staff: { n: '마력구', speed: 9, r: 0.9, pow: [0.5, 0.85], wind: 0.18, end: 0.5, size: 22 },
+  wand: { n: '속사', speed: 15, r: 0.5, pow: [0.25, 0.5], wind: 0.05, end: 0.2, size: 11 },
+  bow: { n: '화살', pierce: true, speed: 24, r: 0.4, pow: [0.5, 0.9], wind: 0.14, end: 0.46, size: 8, arrow: true, max: 14 },
+  bullet: { n: '탄환', speed: 18, r: 0.45, pow: [0.3, 0.6], wind: 0.05, end: 0.24, size: 12 },
+  throw: { n: '투척', speed: 11, r: 0.6, pow: [0.4, 0.7], wind: 0.1, end: 0.4, size: 16, max: 8 },
+};
+const BURST = { n: '전방위 폭발', radius: 3.4, pow: [0.5, 0.9], wind: 0.25, end: 0.65 };
+let comboI = 0, comboT = 9, lastMove = '-';
+const shots = [], bursts = [];
+
+function planeFor(m) {   // 면의 +x는 앞(위로 pitch), +y는 roll만큼 기울어진 "아래"
+  const f = [Math.cos(P.face), 0, Math.sin(P.face)], s = [-f[2], 0, f[0]], ph = m.pitch * D, ro = m.roll * D;
+  const R = [f[0] * Math.cos(ph), Math.sin(ph), f[2] * Math.cos(ph)];
+  let Dv = [s[0] * Math.sin(ro), -Math.cos(ro), s[2] * Math.sin(ro)];
+  const dot = Dv[0] * R[0] + Dv[1] * R[1] + Dv[2] * R[2];
+  return fx.plane([P.x, m.h, P.z], R, V3.norm(V3.sub(Dv, V3.mul(R, dot))));
+}
+function hitEnemy(e, m) {
+  const crit = Math.random() < 0.2, power = clamp(rnd(m.pow[0], m.pow[1]) * (crit ? 1.2 : 1), 0, 1);
+  e.hp -= power * (crit ? 1.8 : 1) * 0.65; e.hurt = 0.2;
+  const d = Math.hypot(e.x - P.x, e.z - P.z) || 1; e.kx = (e.x - P.x) / d * 3; e.kz = (e.z - P.z) / d * 3;
+  const kill = e.hp <= 0;
+  connect(kill ? 'kill' : 'hit', '플레이어', e, { weapon: weapSel.value, element: elemSel.value, power, crit, kill, move: m.n });
+  if (kill) { e.st = 'dead'; e.dead = 0; kills++; }
+}
+const bearing = (e) => { let a = Math.atan2(e.z - P.z, e.x - P.x) - P.face; return Math.atan2(Math.sin(a), Math.cos(a)); };
+function strike(m) {   // 한 번에 맞는 동작(사선·찌르기 등): 리치 안, 정면 허용각 안
+  enemies.forEach((e) => { if (e.st === 'dead') return;
+    if (Math.hypot(e.x - P.x, e.z - P.z) <= m.reach && Math.abs(bearing(e)) <= m.arc * D) hitEnemy(e, m); });
+}
+function sweepHits(m, prev, cur) {   // 휩쓰는 동작(수평·돌려베기): 칼날이 적의 방향을 지나는 순간 맞는다 → 360°도 순서대로
+  const lo = Math.min(prev, cur), hi = Math.max(prev, cur);
+  enemies.forEach((e) => { if (e.st === 'dead' || atk.hit.has(e) || Math.hypot(e.x - P.x, e.z - P.z) > m.reach) return;
+    const b = bearing(e);
+    if ([-1, 0, 1].some((k) => b + k * 6.2832 >= lo && b + k * 6.2832 <= hi)) { atk.hit.add(e); hitEnemy(e, m); } });
 }
 
-/* ---------- 공격: 흡착 → 휘두름 → 명중 ---------- */
-let swingPlane = null, swingTrail = null, swingA = 0, swingPrev = 0;
-const A_WIND = 0.08, A_SWING = 0.1, A_END = 0.34;
+/* ---------- 공격: 흡착 → 동작 → 명중 ---------- */
+let swingPlane = null, swingTrail = null, swingA = 0, swingPrev = 0, thrustX = 0, thrustPrev = 0;
 function startAttack() {
   if (dead) return;
   if (atk || cool > 0) { queued = true; return; }
-  const alive = enemies.filter((e) => e.st !== 'dead');
-  const r = GameFeel.emit('attack', { x: P.x * PX, y: P.z * PX, dir: P.face, targets: alive.map((e) => ({ x: e.x * PX, y: e.z * PX })) });
-  if (r.assist.target >= 0) {
-    const t = alive[r.assist.target];
-    P.face = Math.atan2(t.z - P.z, t.x - P.x); P.ax = r.assist.dx / PX; P.az = r.assist.dy / PX;   // 앞쪽 적으로 몸을 돌리고 살짝 붙는다
+  const w = weapSel.value, shot = SHOT[w], burst = w === 'grimoire';
+  let m;
+  if (shot) m = Object.assign({ type: 'shot' }, shot); else if (burst) m = Object.assign({ type: 'burst' }, BURST);
+  else { const set = SET[w] || SET.sword; if (comboT > 0.9) comboI = 0; m = set[comboI++ % set.length]; }
+  comboT = 0;
+  if (!m.sweep && m.type !== 'burst') {   // 흡착: 앞쪽 적으로 몸을 돌리고 살짝 붙는다(돌려베기·폭발은 전방위라 생략)
+    const alive = enemies.filter((e) => e.st !== 'dead');
+    const r = GameFeel.emit('attack', { x: P.x * PX, y: P.z * PX, dir: P.face, targets: alive.map((e) => ({ x: e.x * PX, y: e.z * PX })) });
+    if (r.assist.target >= 0) { const t = alive[r.assist.target]; P.face = Math.atan2(t.z - P.z, t.x - P.x); P.ax = r.assist.dx / PX; P.az = r.assist.dy / PX; }
   }
-  atk = { t: 0, fired: false }; swingA = swingPrev = -130 * D; swingTrail = null;
-  swingPlane = fx.plane([P.x, 1.2, P.z], [Math.cos(P.face), 0, Math.sin(P.face)], [0, -1, 0]);
+  atk = { t: 0, fired: false, m, hit: new Set() }; lastMove = m.n; 
+  if (m.type === 'slash' || m.type === 'thrust') { swingPlane = planeFor(m); swingA = swingPrev = m.a0 * D; swingTrail = null; thrustX = thrustPrev = 0; }
 }
 function stepAttack(dt) {
-  if (cool > 0) cool = Math.max(0, cool - dt);
+  comboT += dt; if (cool > 0) cool = Math.max(0, cool - dt);
+  stepShots(dt); bursts.forEach((b) => (b.t += dt)); while (bursts.length && bursts[0].t > 0.4) bursts.shift();
   if (!atk) { if (queued && cool <= 0) { queued = false; startAttack(); } return; }
-  atk.t += dt; swingPrev = swingA;
-  const s = clamp((atk.t - A_WIND) / A_SWING, 0, 1), e = 1 - Math.pow(1 - s, 3);
-  swingA = lerp(-130 * D, 40 * D, e);
-  if (atk.t > A_WIND && atk.t < A_WIND + A_SWING + 0.04) {
-    if (!swingTrail) swingTrail = fx.trail(presetOf(elemSel.value), { plane: swingPlane });
-    swingTrail.sweep(swingPrev, swingA, 0, 0, 0, 0, 1, 1, dt);
+  const m = atk.m; atk.t += dt;
+  if (m.type === 'shot') { if (!atk.fired && atk.t >= m.wind) { atk.fired = true; shots.push({ x: P.x, z: P.z, dx: Math.cos(P.face), dz: Math.sin(P.face), d: 0, m, tr: [], el: elemSel.value }); } }
+  else if (m.type === 'burst') {
+    if (!atk.fired && atk.t >= m.wind) { atk.fired = true; bursts.push({ x: P.x, z: P.z, t: 0, el: elemSel.value, r: m.radius });
+      enemies.forEach((e) => { if (e.st !== 'dead' && Math.hypot(e.x - P.x, e.z - P.z) <= m.radius) hitEnemy(e, m); }); }
+  } else {
+    swingPrev = swingA; thrustPrev = thrustX;
+    const s = clamp((atk.t - m.wind) / m.swing, 0, 1), e = 1 - Math.pow(1 - s, 3);
+    swingA = lerp(m.a0, m.a1, e) * D; thrustX = m.type === 'thrust' ? lerp(-30, m.reach * 100 - 120, e) : 0;
+    if (atk.t > m.wind && atk.t < m.wind + m.swing + 0.04) {
+      if (!swingTrail) swingTrail = fx.trail(presetOf(elemSel.value), { plane: swingPlane });
+      swingTrail.sweep(swingPrev, swingA, thrustPrev, 0, thrustX, 0, 1, 1, dt);
+    }
+    if (m.sweep) { if (atk.t > m.wind) sweepHits(m, swingPrev, swingA); }
+    else if (!atk.fired && s >= m.hitAt) { atk.fired = true; strike(m); }
   }
-  if (!atk.fired && s >= 0.5) { atk.fired = true; playerStrike(); }
-  if (atk.t >= A_END) { atk = null; cool = 0.06; }
+  if (atk.t >= m.end) { atk = null; cool = 0.04; }
+}
+function stepShots(dt) {
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i], m = s.m, v = m.speed * dt;
+    s.x += s.dx * v; s.z += s.dz * v; s.d += v; s.tr.push([s.x, s.z]); if (s.tr.length > 8) s.tr.shift();
+    s.hit = s.hit || new Set();
+    const hit = enemies.find((e) => e.st !== 'dead' && !s.hit.has(e) && Math.hypot(e.x - s.x, e.z - s.z) < m.r + 0.4);
+    if (hit) { hitEnemy(hit, m); s.hit.add(hit); if (!m.pierce) { shots.splice(i, 1); continue; } }
+    if (s.d > (m.max || 10) || Math.hypot(s.x, s.z) > ARENA + 1) shots.splice(i, 1);
+  }
 }
 
 /* ---------- 적 ---------- */
@@ -336,16 +405,27 @@ function drawActors(g) {
   });
 }
 function drawSword(g) {
-  if (!atk || !swingPlane) return;
-  const L = (r) => fx.projLocal(swingPlane, Math.cos(swingA) * r, Math.sin(swingA) * r), a = L(20), b = L(250);
+  if (!atk || !swingPlane || atk.m.type === 'shot' || atk.m.type === 'burst') return;
+  const m = atk.m, L = (r) => fx.projLocal(swingPlane, Math.cos(swingA) * r + thrustX, Math.sin(swingA) * r), a = L(20), b = L(m.len);
   if (!a || !b) return;
-  g.strokeStyle = '#dfe3ea'; g.lineCap = 'round'; g.lineWidth = 4 * dpr; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  g.strokeStyle = '#dfe3ea'; g.lineCap = 'round'; g.lineWidth = m.w * dpr; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+}
+function drawShots(g) {
+  shots.forEach((s) => {
+    const c = hexA(COLOR[s.el] || '#ffffff', 1), pts = s.tr.map((q) => S(q[0], 1.1, q[1])).filter(Boolean), h = S(s.x, 1.1, s.z); if (!h) return;
+    const pm = UNIT * h[2] / 100;
+    g.lineCap = 'round'; g.strokeStyle = hexA(COLOR[s.el] || '#ffffff', 0.45); g.lineWidth = s.m.size * 0.6 * pm * dpr;
+    if (pts.length > 1) { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); pts.forEach((q) => g.lineTo(q[0], q[1])); g.stroke(); }
+    if (s.m.arrow) { const t = S(s.x - s.dx * 0.7, 1.1, s.z - s.dz * 0.7); g.strokeStyle = '#e8e2d0'; g.lineWidth = 3 * dpr; if (t) { g.beginPath(); g.moveTo(t[0], t[1]); g.lineTo(h[0], h[1]); g.stroke(); } }
+    else { g.fillStyle = c; g.beginPath(); g.arc(h[0], h[1], s.m.size * pm * dpr * 0.5, 0, 6.2832); g.fill(); g.fillStyle = '#ffffff'; g.beginPath(); g.arc(h[0], h[1], s.m.size * pm * dpr * 0.2, 0, 6.2832); g.fill(); }
+  });
+  bursts.forEach((b) => { const k = clamp(b.t / 0.4, 0, 1); ring(g, b.x, b.z, b.r * (0.25 + 0.75 * (1 - Math.pow(1 - k, 3))), 48); g.strokeStyle = hexA(COLOR[b.el] || '#ffffff', 0.9 * (1 - k)); g.lineWidth = 4 * dpr; g.stroke(); g.fillStyle = hexA(COLOR[b.el] || '#ffffff', 0.18 * (1 - k)); g.fill(); });
 }
 function render(w) {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   ctx.fillStyle = '#101114'; ctx.fillRect(0, 0, cv.width, cv.height);
   drawGround(ctx);
-  fx.render(ctx, null, { between(g) { drawTele(g); drawActors(g); } });
+  fx.render(ctx, null, { between(g) { drawTele(g); drawShots(g); drawActors(g); } });
   drawWeather(ctx, w);
 }
 
@@ -367,7 +447,7 @@ sndBtn.addEventListener('click', () => setSound(!soundOn));
 const $ = (id) => document.getElementById(id);
 function hud() {
   $('sKill').textContent = kills; $('sHp').textContent = Math.max(0, P.hp) + ' / ' + PLAYER_HP;
-  $('sHpBox').classList.toggle('low', P.hp <= 2); $('sStop').textContent = lastStop + ' ms'; $('sKey').textContent = lastKey;
+  $('sHpBox').classList.toggle('low', P.hp <= 2); $('sStop').textContent = lastStop + ' ms'; $('sMove').textContent = lastMove;
 }
 
 /* ---------- 루프 ---------- */
@@ -419,7 +499,7 @@ window.__arena = {
   attack: startAttack, setSound, reset: resetGame, pause(v) { paused = v !== false; last = performance.now(); },
   step(sec, fps = 60) { const n = Math.round(sec * fps); let f; for (let i = 0; i < n; i++) f = tick(1 / fps); return f && { dt: f.dt, frozen: f.frozen, cam: f.cam }; },
   tp(x, z) { P.x = x; P.z = z; }, enemies: () => enemies, player: P, gf: GameFeel,
-  state: () => ({ kills, hp: P.hp, dead, enemies: enemies.map((e) => ({ st: e.st, hp: +e.hp.toFixed(2), x: +e.x.toFixed(2), z: +e.z.toFixed(2), el: e.el })), lastKey, lastStop, drops: drops.length, parts: fx.parts.length, trails: fx.trails.length, gl: !!fx.gl }),
+  state: () => ({ kills, hp: P.hp, dead, enemies: enemies.map((e) => ({ st: e.st, hp: +e.hp.toFixed(2), x: +e.x.toFixed(2), z: +e.z.toFixed(2), el: e.el })), lastKey, lastMove, lastStop, drops: drops.length, parts: fx.parts.length, trails: fx.trails.length, gl: !!fx.gl }),
 };
 </script>
 </body>
