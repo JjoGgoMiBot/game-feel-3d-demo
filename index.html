@@ -182,7 +182,7 @@ function connect(ev, who, target, o) {
   logEl.innerHTML = logLines.map((s) => '<li>' + s + '</li>').join('');
   if (ev === 'tele' || o.spark) return r;   // 예고는 소리·바닥 원만. 튕겨내기는 맞닿은 점의 작은 불꽃만(세키로: 신호는 소리·멈춤, 화면을 덮지 않는다)
   const pre = presetOf(o.element);
-  const sc = 0.3 + 0.35 * clamp(o.power || 0.5, 0, 1) * (o.fxk || 1);   // 섬광 크기 = 위력. 몸(실루엣)보다 크면 다음 동작을 못 읽는다
+  const sc = (0.22 + 0.3 * clamp(o.power || 0.5, 0, 1)) * (o.fxk || 1);   // 섬광 크기 = 위력. 몸(실루엣)보다 크면 다음 동작을 못 읽는다
   fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.0, target.z]), scale: sc, lines: ev === 'kill' || !!o.crit });   // 집중선은 처치·치명에만
   if (ev === 'kill' || o.crit) fx.impact(0, 0, pre, 0, { plane: fx.facing([target.x, 1.4, target.z]), scale: sc * 0.6 });
   return r;
@@ -492,7 +492,7 @@ function stepEnemies(dt) {
 function hurtPlayer(e) {
   P.hp -= 1; P.inv = 0.8; P.hurt = 0.25; P.charging = false; P.hold = -1; if (P.act && P.act.k !== 'roll') P.act = null;
   const d = Math.hypot(e.x - P.x, e.z - P.z) || 1;   // 맞은 쪽 몸 표면에 작게: 내 몸이 섬광에 가리면 피격 자세·다음 회피를 못 읽는다
-  connect('hit', '적', { x: P.x + (e.x - P.x) / d * 0.25, z: P.z + (e.z - P.z) / d * 0.25 }, { weapon: 'axe', element: e.el, power: 0.6, crit: false, kill: false, fxk: 0.45 });   // 멈춤·흔들림은 그대로, 그림만 작게
+  connect('hit', '적', { x: P.x + (e.x - P.x) / d * 0.25, z: P.z + (e.z - P.z) / d * 0.25 }, { weapon: 'axe', element: e.el, power: 0.6, crit: false, kill: false, fxk: 0.6 });   // 멈춤·흔들림은 그대로, 그림만 작게
   if (P.hp <= 0) { dead = true; document.getElementById('over').classList.add('on'); }
   hud();
 }
@@ -754,7 +754,7 @@ function drawShocks(g) {   // 내려치기 충격파: 퍼지는 고리 + 갈라�
   pend.forEach((p) => {   // 내려쏘기: 손에서 땅으로 꽂히는 탄
     const k = clamp(p.t / p.dur, 0, 1), x = lerp(p.x0, p.x, k), y = lerp(p.y0, 0.2, k), z = lerp(p.z0, p.z, k);
     const a = S(x, y, z), b = S(lerp(p.x0, p.x, k + 0.1), lerp(p.y0, 0.2, k + 0.1), lerp(p.z0, p.z, k + 0.1)); if (!a || !b) return;
-    BoltFx.bolt(g, { x: a[0], y: a[1], ang: Math.atan2(b[1] - a[1], b[0] - a[0]), R: ppmAt(a) * (0.16 + p.size * 0.016), d: 1 + k * 2, t: p.t, el: p.el, w: p.w });
+    BoltFx.bolt(g, { x: a[0], y: a[1], ang: Math.atan2(b[1] - a[1], b[0] - a[0]), R: ppmAt(a) * SZ(p.size), d: 1 + k * 2, t: p.t, el: p.el, w: p.w });
   });
 }
 
@@ -817,17 +817,18 @@ function drawStab(g) {
   const m = atk.m, a = S(P.x, m.h + P.y, P.z), b = S(P.x + Math.cos(P.face) * m.reach, m.h + P.y, P.z + Math.sin(P.face) * m.reach); if (!a || !b) return;
   BoltFx.stab(g, { x0: a[0], y0: a[1], x1: b[0], y1: b[1], R: ppmAt(a) * (weapSel.value === 'spear' ? 0.2 : 0.14), t: clamp((atk.t - m.wind) / (m.end - m.wind), 0, 1), el: elemSel.value });
 }
+const SZ = (n) => 0.1 + n * 0.01;   // 투사체 그림 반지름(m): 투척 0.26 · 지팡이 0.32 · 활 0.18. 몸(어깨 폭 약 0.4m)보다 작아야 쏜 사람이 보인다
 function drawShots(g) {
   if (atk && atk.m.type === 'shot' && !atk.fired && P.J) {   // 예비동작: 발사 전 손끝에 기가 모인다
     const t0 = P.wpn ? P.wpn.tip : P.J.haR, hs = S(t0[0], t0[1], t0[2]), nx = hs && S(t0[0] + Math.cos(P.face) * 0.5, t0[1], t0[2] + Math.sin(P.face) * 0.5);   // 무기 끝에 모인다
-    if (hs && nx) BoltFx.charge(g, { x: hs[0], y: hs[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(hs) * (0.16 + atk.m.size * 0.016) * 0.55, k: atk.t / windOf(atk.m), el: elemSel.value });
+    if (hs && nx) BoltFx.charge(g, { x: hs[0], y: hs[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(hs) * SZ(atk.m.size) * 0.55, k: atk.t / windOf(atk.m), el: elemSel.value });
   }
   shots.forEach((s) => {
     const hy = 1.1 + (s.y || 0), hs = S(s.x, hy, s.z), nx = S(s.x + s.dx * 0.5, hy, s.z + s.dz * 0.5); if (!hs || !nx) return;
-    BoltFx.bolt(g, { x: hs[0], y: hs[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(hs) * (0.16 + s.m.size * 0.016), d: s.d, t: s.age || 0, el: s.el, w: s.w });
-    const m0 = S(s.x0, hy, s.z0); if (m0) BoltFx.muzzle(g, { x: m0[0], y: m0[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(m0) * (0.16 + s.m.size * 0.016), age: s.age, el: s.el });   // 발사 반동
+    BoltFx.bolt(g, { x: hs[0], y: hs[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(hs) * SZ(s.m.size), d: s.d, t: s.age || 0, el: s.el, w: s.w });
+    const m0 = S(s.x0, hy, s.z0); if (m0) BoltFx.muzzle(g, { x: m0[0], y: m0[1], ang: Math.atan2(nx[1] - hs[1], nx[0] - hs[0]), R: ppmAt(m0) * SZ(s.m.size), age: s.age, el: s.el });   // 발사 반동
   });
-  hitFx.forEach((f) => { const hs = S(f.x, f.y || 1.1, f.z); if (hs) BoltFx.impact(g, { x: hs[0], y: hs[1], R: ppmAt(hs) * (0.13 + (f.size || 12) * 0.014) * (f.k || 1.5), age: f.age, el: f.el }); });
+  hitFx.forEach((f) => { const hs = S(f.x, f.y || 1.1, f.z); if (hs) BoltFx.impact(g, { x: hs[0], y: hs[1], R: ppmAt(hs) * (0.13 + (f.size || 12) * 0.014) * (f.k || 0.85), age: f.age, el: f.el }); });
   bursts.forEach((b) => { const m = groundM(b.x, b.z), gp = S(b.x, 0, b.z); if (m && gp) BoltFx.rune(g, { m, r: b.r, ppm: ppmAt(gp), t: b.t, el: b.el }); });
 }
 function render(w) {
