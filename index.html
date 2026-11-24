@@ -654,7 +654,13 @@ function weaponPose(J) {
       const slide = { spear: 0.6, staff: 0.5 }[w];   // 긴 자루는 가운데를 쥐도록 손을 미끄러뜨린다 → 양 끝이 덜 삐져나온다. 시작·끝 0.08초에 걸쳐 옮긴다
       if (slide) { const t = P.act.t, k = clamp(Math.min(t, RL.dur - t) / 0.08, 0, 1); hand = A(hand, Mu(dir, -slide * k)); }
     }
-    else if (SET[w]) dir = P.charging ? N(A(Mu(J.f, -1), [0, w === 'axe' ? 0.9 : -0.35, 0])) : N(A(A(fa, Mu(J.f, 0.9)), [0, 0.25, 0]));   // 모을 때는 칼을 뒤로 뺀다(발도·대검 자세)
+    else if (SET[w] && !P.charging) {   // 겨눔(중단세): 손은 배꼽 앞, 칼끝은 앞쪽 위(화면에서 약 45°). 걸을 때도 팔 흔들림은 25%만 남긴다
+      const sr = N(Rig.sub(J.shR, J.shL)), up = [0, 1, 0], ang = (w === 'spear' ? 65 : 55) * D;   // 실제 45°는 내려다보는 카메라에서 약 25°로 눌려 보여서 55°로 든다
+      const guard = A(A(A(J.pel, Mu(J.f, 0.3)), Mu(sr, 0.12)), Mu(up, 0.2));
+      Rig.armIK(J, 'R', A(Mu(J.haR, 0.25), Mu(guard, 0.75)), pole); hand = J.haR;
+      dir = N(A(A(Mu(J.f, Math.cos(ang)), Mu(up, Math.sin(ang))), Mu(sr, 0.12)));
+    }
+    else if (SET[w]) dir = P.charging ?N(A(Mu(J.f, -1), [0, w === 'axe' ? 0.9 : -0.35, 0])) : N(A(A(fa, Mu(J.f, 0.9)), [0, 0.25, 0]));   // 모을 때는 칼을 뒤로 뺀다(발도·대검 자세)
     else dir = N(A(fa, Mu(J.f, 1.5)));
   }
   if (TWO[w]) { const rl = P.act && P.act.k === 'roll'; Rig.armIK(J, 'L', A(rl ? J.haR : hand, Mu(dir, -TWO[w] * (rl ? 0.6 : 1))), pole); }   // 구를 때는 두 손을 붙여 쥔다
