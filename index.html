@@ -637,9 +637,23 @@ function poseActors(dt) {
 const GRIP = 0.42;
 const WL = { sword: 1.05, axe: 0.95, dagger: 0.38, spear: 2.0, staff: 1.5, wand: 0.36, bullet: 0.34, bow: 0.62, throw: 0.26, grimoire: 0.24 };
 const TWO = { axe: 0.2, spear: 0.55, staff: 0.4 };   // 두 손 무기: 왼손이 자루를 이만큼 아래에서 잡는다
+// 달릴 때 무기 자세. h = 손 위치(골반에서 앞·오른쪽·위, m), d = 날 방향(앞·오른쪽·위), sw = 남기는 팔 흔들림, two = 왼손도 잡는가
+const RUNW = {
+  sword:  { h: [-0.12, 0.3, -0.06], d: [-0.75, 0.15, -0.62], sw: 0.25 },          // 팔을 내리고 칼끝을 뒤쪽 바닥으로 끈다
+  spear:  { h: [-0.08, 0.3, 0], d: [-0.68, 0.18, 0.68], sw: 0.2 },                 // 팔을 내리고 창을 등 뒤로 비스듬히 눕힌다
+  dagger: { h: [0.04, 0.34, 0.05], d: [-0.9, 0.3, -0.25], sw: 0.45 },            // 역수: 칼끝이 뒤를 향하고 팔은 크게 흔든다
+  axe:    { h: [0.22, 0.22, 0.55], d: [-0.55, 0.25, 0.8], sw: 0.1, two: true },  // 두 손으로 어깨에 멘다
+  staff:  { h: [-0.05, 0.3, 0.02], d: [-0.85, 0.15, 0.3], sw: 0.2 },             // 한 손으로 쥐고 뒤로 눕혀 끈다
+  wand:   { h: [0, 0.27, 0], d: [-0.6, 0.2, -0.75], sw: 0.4 },                    // 끝을 아래 뒤로
+  bullet: { h: [0.15, 0.24, 0.1], d: [0.45, 0.05, -0.89], sw: 0.15 },             // 총구를 앞 아래로(낮은 준비 자세)
+  bow:    { h: [-0.04, 0.28, 0.02], d: [-0.15, 0.05, 0.98], sw: 0.3 },            // 활을 세워 다리 옆에 든다
+  throw:  { h: [0.02, 0.27, 0.02], d: [-0.95, 0.12, -0.2], sw: 0.45 },
+};
+const smooth = (t) => t * t * (3 - 2 * t);
+let runTwo = false, runK = 0;
 function weaponPose(J) {
   const w = weapSel.value, L = WL[w] || 1, A = Rig.add, Mu = Rig.mul, N = Rig.norm, pole = A(J.s, [0, -1, 0]);
-  let hand, dir;
+  let hand, dir; runTwo = false; runK = 0;
   if (atk && (atk.m.type === 'slash' || atk.m.type === 'thrust') && swingBasis) {
     const b = swingBasis, o = [P.x, (atk.m.h || 1.2) + P.y, P.z];
     dir = N(A(Mu(b.R, Math.cos(swingA)), Mu(b.D, Math.sin(swingA))));
@@ -647,7 +661,7 @@ function weaponPose(J) {
     if (Rig.armIK(J, 'R', hand, pole) > 0.005) hand = J.haR;   // 팔이 못 닿으면 무기는 실제 손에 붙는다(허공에 뜨지 않게)
   } else if (atk && atk.m.type === 'plunge') { hand = J.haR; dir = N(A(Mu(J.u, -1), Mu(J.f, 0.35))); }   // 칼끝을 아래로 세우고 떨어진다
   else {
-    const fa = N(Rig.sub(J.haR, J.elR));
+    const fa = N(Rig.sub(J.haR, J.elR)), swing0 = J.haR.slice();
     hand = J.haR;
     if (P.act && P.act.k === 'roll') {   // 구를 때는 날을 척추 따라 몸에 붙인다(날이 바깥으로 뻗으면 땅에 걸린다)
       dir = N(A(Rig.sub(J.pel, J.chest), Mu(fa, 0.3)));
@@ -662,8 +676,19 @@ function weaponPose(J) {
     }
     else if (SET[w]) dir = P.charging ?N(A(Mu(J.f, -1), [0, w === 'axe' ? 0.9 : -0.35, 0])) : N(A(A(fa, Mu(J.f, 0.9)), [0, 0.25, 0]));   // 모을 때는 칼을 뒤로 뺀다(발도·대검 자세)
     else dir = N(A(fa, Mu(J.f, 1.5)));
+    const rk = P.act || P.charging || P.air ? 0 : smooth(clamp((P.spd - 1.6) / 2, 0, 1)), R = RUNW[w];
+    if (rk > 0 && R) {   // 달리기 자세: 무기마다 다르게 든다. 속도에 따라 겨눔에서 섞어 들어간다
+      const sr = N(Rig.sub(J.shR, J.shL)), up = [0, 1, 0], at = (v, o) => A(A(A(o, Mu(J.f, v[0])), Mu(sr, v[1])), Mu(up, v[2]));
+      const rh = at(R.h, J.pel), tgt = A(Mu(rh, 1 - R.sw), Mu(swing0, R.sw));   // 팔 흔들림은 sw만큼만 남긴다
+      Rig.armIK(J, 'R', A(Mu(hand, 1 - rk), Mu(tgt, rk)), pole); hand = J.haR;
+      dir = N(A(Mu(dir, 1 - rk), Mu(N(at(R.d, [0, 0, 0])), rk)));
+      runTwo = R.two; runK = rk;
+    }
   }
-  if (TWO[w]) { const rl = P.act && P.act.k === 'roll'; Rig.armIK(J, 'L', A(rl ? J.haR : hand, Mu(dir, -TWO[w] * (rl ? 0.6 : 1))), pole); }   // 구를 때는 두 손을 붙여 쥔다
+  if (TWO[w]) {   // 구를 때는 두 손을 붙여 쥔다. 달리며 한 손으로 끄는 무기는 왼손을 놓고 팔을 흔든다(속도에 따라 섞어서 튀지 않게)
+    const rl = P.act && P.act.k === 'roll', g = A(rl ? J.haR : hand, Mu(dir, -TWO[w] * (rl ? 0.6 : 1))), f = runTwo ? 0 : runK;
+    Rig.armIK(J, 'L', f > 0 ? A(Mu(g, 1 - f), Mu(J.haL, f)) : g, pole);
+  }
   return { w, hand, dir, L, tip: A(hand, Mu(dir, L)) };
 }
 function drawWeapon(g, Wp, proj) {
